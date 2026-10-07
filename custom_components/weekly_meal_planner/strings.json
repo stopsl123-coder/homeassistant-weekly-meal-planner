@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Weekly Meal Planner",
+        "description": "Bitte gib deinen USDA FoodData Central API-Key ein."
+      }
+    },
+    "error": {
+      "no_api_key": "API-Key darf nicht leer sein."
+    }
+  }
+}

@@ -1,101 +1,280 @@
 #!/bin/bash
+set -e
 
-echo "Erstelle Verzeichnisstruktur..."
-mkdir -p custom_components/weekly_meal_planner
-mkdir -p www/weekly_meal_planner
+echo "Starte Full-Setup für HACS-Repository..."
+
+REPO_URL="https://github.com/stopsl123-coder/homeassistant-weekly-meal-planner"
+DOMAIN="weekly_meal_planner"
+
+mkdir -p custom_components/$DOMAIN
+mkdir -p custom_components/$DOMAIN/translations
+mkdir -p www/$DOMAIN
+mkdir -p .github/workflows
 
 ##############################################
-# manifest.json
+# info.md (HACS-Info)
 ##############################################
-cat > custom_components/weekly_meal_planner/manifest.json << 'EOF'
+cat > info.md << 'EOF'
+# Weekly Meal Planner
+
+Der **Weekly Meal Planner** ist eine Home-Assistant-Integration zur Planung von Wochenmahlzeiten,
+Einkaufslisten und Kalorien-/Makro-Tracking.
+
+## Features
+
+- Automatische Wochenplanung (Lunch/Dinner)
+- Einkaufslisten-Generierung
+- Kalorien- und Makro-Berechnung
+- USDA FoodData Central API-Unterstützung
+- Lovelace Custom Card zur Eingabe neuer Gerichte
+- Sensoren für Kalorien und Einkaufsliste
+
+## Installation (HACS Custom Repository)
+
+1. HACS öffnen → Integrationen
+2. Rechts oben: ⋮ → Custom repositories
+3. Repository-URL:
+
+   `https://github.com/stopsl123-coder/homeassistant-weekly-meal-planner`
+
+4. Kategorie: `Integration`
+5. Installation durchführen, Home Assistant neu starten
+
+## Konfiguration
+
+In `configuration.yaml`:
+
+```yaml
+weekly_meal_planner:
+  api_key: !secret usda_api_key
+
+
+EOF
+
+
+
+##############################################
+
+#GitHub Release Workflow
+##############################################
+cat > .github/workflows/release.yml << 'EOF'
+name: Release
+
+on:
+push:
+tags:
+- 'v..*'
+
+jobs:
+build:
+runs-on: ubuntu-latest
+steps:
+- name: Checkout
+uses: actions/checkout@v4
+
+name: Set up Python
+uses: actions/setup-python@v5
+with:
+python-version: '3.11'
+
+name: Run basic checks
+run: |
+python -m compileall custom_components
+EOF
+
+##############################################
+
+#Versionierung (version.py)
+##############################################
+cat > custom_components/$DOMAIN/version.py << 'EOF'
+version = "1.1.0"
+EOF
+
+##############################################
+
+#manifest.json aktualisieren
+##############################################
+cat > custom_components/$DOMAIN/manifest.json << EOF
 {
-  "domain": "weekly_meal_planner",
-  "name": "Weekly Meal Planner",
-  "version": "1.0.0",
-  "documentation": "https://example.com/weekly_meal_planner",
-  "requirements": ["requests"],
-  "codeowners": ["@thomas"],
-  "iot_class": "local_polling"
+"domain": "$DOMAIN",
+"name": "Weekly Meal Planner",
+"version": "1.1.0",
+"documentation": "$REPO_URL",
+"requirements": ["requests"],
+"codeowners": ["@stopsl123-coder"],
+"iot_class": "local_polling",
+"config_flow": true
+}
+EOF
+##############################################
+# Config-Flow UI (config_flow.py)
+##############################################
+cat > custom_components/$DOMAIN/config_flow.py << 'EOF'
+from __future__ import annotations
+
+import voluptuous as vol
+from homeassistant import config_entries
+from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResult
+
+from .const import DOMAIN
+
+class WeeklyMealPlannerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    """Config flow for Weekly Meal Planner."""
+
+    VERSION = 1
+
+    async def async_step_user(self, user_input=None) -> FlowResult:
+        errors = {}
+
+        if user_input is not None:
+            api_key = user_input.get("api_key")
+            if not api_key:
+                errors["base"] = "no_api_key"
+            else:
+                return self.async_create_entry(
+                    title="Weekly Meal Planner",
+                    data={"api_key": api_key},
+                )
+
+        data_schema = vol.Schema(
+            {
+                vol.Required("api_key"): str,
+            }
+        )
+
+        return self.async_show_form(
+            step_id="user",
+            data_schema=data_schema,
+            errors=errors,
+        )
+EOF
+
+##############################################
+# const.py
+##############################################
+cat > custom_components/$DOMAIN/const.py << 'EOF'
+DOMAIN = "weekly_meal_planner"
+EOF
+
+##############################################
+# translations/strings.json
+##############################################
+cat > custom_components/$DOMAIN/strings.json << 'EOF'
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Weekly Meal Planner",
+        "description": "Bitte gib deinen USDA FoodData Central API-Key ein."
+      }
+    },
+    "error": {
+      "no_api_key": "API-Key darf nicht leer sein."
+    }
+  }
 }
 EOF
 
 ##############################################
-# services.yaml
+# translations/de.json
 ##############################################
-cat > custom_components/weekly_meal_planner/services.yaml << 'EOF'
-add_meal:
-  description: Fügt ein neues Gericht zur Datenbank hinzu
-  fields:
-    name:
-      description: Name des Gerichts
-      example: "Hähnchen mit Reis"
-    meal_type:
-      description: Art der Mahlzeit
-      example: "lunch"
-    ingredients:
-      description: Zutaten als JSON
-      example: '{"Hähnchen": {"amount": 200, "unit": "g"}, "Reis": {"amount": 150, "unit": "g"}}'
-
-generate_shopping_list:
-  description: Generiert die Einkaufsliste
-
-generate_week_plan:
-  description: Erzeugt einen einfachen Wochenplan nach Kalorienziel
+cat > custom_components/$DOMAIN/translations/de.json << 'EOF'
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Weekly Meal Planner",
+        "description": "Bitte gib deinen USDA FoodData Central API-Key ein."
+      }
+    },
+    "error": {
+      "no_api_key": "API-Key darf nicht leer sein."
+    }
+  }
+}
 EOF
 
 ##############################################
-# __init__.py
+# translations/en.json
 ##############################################
-cat > custom_components/weekly_meal_planner/__init__.py << 'EOF'
-import logging
-from homeassistant.core import HomeAssistant, ServiceCall
+cat > custom_components/$DOMAIN/translations/en.json << 'EOF'
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Weekly Meal Planner",
+        "description": "Please enter your USDA FoodData Central API key."
+      }
+    },
+    "error": {
+      "no_api_key": "API key must not be empty."
+    }
+  }
+}
+EOF
 
-from .database import add_meal
-from .mealplanner import generate_shopping_list, week_plan
-from .smart_planner import generate_simple_week_plan
+##############################################
+# __init__.py anpassen für Config-Flow
+##############################################
+cat > custom_components/$DOMAIN/__init__.py << 'EOF'
+import logging
+from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigEntry
+
+from .const import DOMAIN
+from .nutrition_api import set_api_key
 
 _LOGGER = logging.getLogger(__name__)
 
 async def async_setup(hass: HomeAssistant, config):
-    async def handle_add_meal(call: ServiceCall):
-        name = call.data["name"]
-        meal_type = call.data["meal_type"]
-        ingredients = call.data["ingredients"]
-        add_meal(name, meal_type, ingredients)
+    # YAML-basierte Konfiguration (Fallback)
+    domain_config = config.get(DOMAIN, {})
+    api_key = domain_config.get("api_key")
+    if api_key:
+        set_api_key(api_key)
+        _LOGGER.info("Weekly Meal Planner API-Key aus YAML geladen.")
+    return True
 
-    async def handle_generate_shopping_list(call: ServiceCall):
-        _LOGGER.info("Einkaufsliste neu berechnet: %s", generate_shopping_list())
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
+    api_key = entry.data.get("api_key")
+    if api_key:
+        set_api_key(api_key)
+        _LOGGER.info("Weekly Meal Planner API-Key aus Config-Flow geladen.")
+    else:
+        _LOGGER.warning("Weekly Meal Planner: Kein API-Key gesetzt.")
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN]["entry_id"] = entry.entry_id
+    return True
 
-    async def handle_generate_week_plan(call: ServiceCall):
-        new_plan = generate_simple_week_plan()
-        week_plan.clear()
-        week_plan.update(new_plan)
-        _LOGGER.info("Neuer Wochenplan: %s", week_plan)
-
-    hass.services.async_register("weekly_meal_planner", "add_meal", handle_add_meal)
-    hass.services.async_register("weekly_meal_planner", "generate_shopping_list", handle_generate_shopping_list)
-    hass.services.async_register("weekly_meal_planner", "generate_week_plan", handle_generate_week_plan)
-
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
+    hass.data.get(DOMAIN, {}).pop("entry_id", None)
     return True
 EOF
 
 ##############################################
 # nutrition_api.py
 ##############################################
-cat > custom_components/weekly_meal_planner/nutrition_api.py << 'EOF'
+cat > custom_components/$DOMAIN/nutrition_api.py << 'EOF'
 import requests
 
-API_KEY = "DEIN_API_KEY_HIER"
-BASE_URL = "https://api.nal.usda.gov/fdc/v1/foods/search"
+API_KEY = None
+
+def set_api_key(key):
+    global API_KEY
+    API_KEY = key
 
 def get_nutrition_for_item(item_name):
+    if not API_KEY:
+        raise RuntimeError("USDA API-Key nicht gesetzt!")
+
     params = {
         "api_key": API_KEY,
         "query": item_name,
         "pageSize": 1
     }
 
-    response = requests.get(BASE_URL, params=params)
+    response = requests.get("https://api.nal.usda.gov/fdc/v1/foods/search", params=params)
     response.raise_for_status()
     data = response.json()
 
@@ -116,60 +295,11 @@ EOF
 ##############################################
 # database.py
 ##############################################
-cat > custom_components/weekly_meal_planner/database.py << 'EOF'
+cat > custom_components/$DOMAIN/database.py << 'EOF'
 import sqlite3
 import json
 
 DB_PATH = "/config/mealplanner.db"
-
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS meals (
-            id INTEGER PRIMARY KEY,
-            name TEXT,
-            ingredients TEXT,
-            meal_type TEXT
-        )
-    """)
-
-    example_meals = [
-        (
-            "Rührei mit Toast",
-            json.dumps({
-                "Eier": {"amount": 3, "unit": "Stück", "calories": 72},
-                "Toast": {"amount": 2, "unit": "Stück", "calories": 80},
-                "Butter": {"amount": 10, "unit": "g", "calories": 75}
-            }),
-            "breakfast"
-        ),
-        (
-            "Spaghetti Bolognese",
-            json.dumps({
-                "Spaghetti": {"amount": 200, "unit": "g", "calories": 350},
-                "Hackfleisch": {"amount": 300, "unit": "g", "calories": 250},
-                "Tomatensauce": {"amount": 250, "unit": "ml", "calories": 70}
-            }),
-            "lunch"
-        ),
-        (
-            "Gemüsepfanne",
-            json.dumps({
-                "Paprika": {"amount": 2, "unit": "Stück", "calories": 30},
-                "Zucchini": {"amount": 1, "unit": "Stück", "calories": 20},
-                "Reis": {"amount": 150, "unit": "g", "calories": 180}
-            }),
-            "dinner"
-        )
-    ]
-
-    for meal in example_meals:
-        c.execute("INSERT INTO meals (name, ingredients, meal_type) VALUES (?, ?, ?)", meal)
-
-    conn.commit()
-    conn.close()
 
 def add_meal(name, meal_type, ingredients_json):
     conn = sqlite3.connect(DB_PATH)
@@ -187,7 +317,6 @@ def get_meals():
     c.execute("SELECT name, ingredients, meal_type FROM meals")
     rows = c.fetchall()
     conn.close()
-
     return [{"name": r[0], "ingredients": json.loads(r[1]), "meal_type": r[2]} for r in rows]
 
 def get_ingredients(meal_name):
@@ -196,74 +325,49 @@ def get_ingredients(meal_name):
     c.execute("SELECT ingredients FROM meals WHERE name=?", (meal_name,))
     row = c.fetchone()
     conn.close()
-
-    if row:
-        return json.loads(row[0])
-    return {}
+    return json.loads(row[0]) if row else {}
 EOF
 
 ##############################################
 # mealplanner.py
 ##############################################
-cat > custom_components/weekly_meal_planner/mealplanner.py << 'EOF'
+cat > custom_components/$DOMAIN/mealplanner.py << 'EOF'
 from .database import get_ingredients
 
-week_plan = {
-    "monday": {"breakfast": "Rührei mit Toast", "lunch": "Spaghetti Bolognese", "dinner": "Gemüsepfanne"},
-    "tuesday": {"breakfast": "Rührei mit Toast", "lunch": "Spaghetti Bolognese", "dinner": "Gemüsepfanne"},
-    "wednesday": {"breakfast": "Rührei mit Toast", "lunch": "Spaghetti Bolognese", "dinner": "Gemüsepfanne"},
-    "thursday": {"breakfast": "Rührei mit Toast", "lunch": "Spaghetti Bolognese", "dinner": "Gemüsepfanne"},
-    "friday": {"breakfast": "Rührei mit Toast", "lunch": "Spaghetti Bolognese", "dinner": "Gemüsepfanne"},
-    "saturday": {"breakfast": "Rührei mit Toast", "lunch": "Spaghetti Bolognese", "dinner": "Gemüsepfanne"},
-    "sunday": {"breakfast": "Rührei mit Toast", "lunch": "Spaghetti Bolognese", "dinner": "Gemüsepfanne"}
-}
+week_plan = {}
 
 def generate_shopping_list():
     shopping_list = {}
-
     for day, meals in week_plan.items():
         for meal_type, meal_name in meals.items():
             ingredients = get_ingredients(meal_name)
-
             for item, data in ingredients.items():
                 amount = data["amount"]
                 unit = data["unit"]
-
                 if item not in shopping_list:
                     shopping_list[item] = {"amount": amount, "unit": unit}
                 else:
-                    if shopping_list[item]["unit"] == unit:
-                        shopping_list[item]["amount"] += amount
-                    else:
-                        key = item + f" ({unit})"
-                        if key not in shopping_list:
-                            shopping_list[key] = {"amount": amount, "unit": unit}
-                        else:
-                            shopping_list[key]["amount"] += amount
-
+                    shopping_list[item]["amount"] += amount
     return shopping_list
 
 def calculate_calories_for_meal(meal_name):
     ingredients = get_ingredients(meal_name)
-    total_calories = 0
-
+    total = 0
     for item, data in ingredients.items():
         amount = data["amount"]
         unit = data["unit"]
         calories = data.get("calories", 0)
-
         if unit in ["g", "ml"]:
-            total_calories += (calories / 100) * amount
-        elif unit == "Stück":
-            total_calories += calories * amount
-
-    return round(total_calories, 2)
+            total += (calories / 100) * amount
+        else:
+            total += calories * amount
+    return round(total, 2)
 EOF
 
 ##############################################
 # smart_planner.py
 ##############################################
-cat > custom_components/weekly_meal_planner/smart_planner.py << 'EOF'
+cat > custom_components/$DOMAIN/smart_planner.py << 'EOF'
 from .database import get_meals
 from .mealplanner import calculate_calories_for_meal
 
@@ -272,28 +376,25 @@ DAILY_TARGET_KCAL = 2000
 def generate_simple_week_plan():
     meals = get_meals()
     lunch_dinner = [m for m in meals if m["meal_type"] in ["lunch", "dinner"]]
-
-    week_days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+    week_days = ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"]
     new_plan = {}
-
     idx = 0
+
     for day in week_days:
         day_total = 0
         day_meals = {"breakfast": "Rührei mit Toast"}
 
         if idx < len(lunch_dinner):
-            meal_lunch = lunch_dinner[idx]["name"]
-            kcal_lunch = calculate_calories_for_meal(meal_lunch)
-            day_meals["lunch"] = meal_lunch
-            day_total += kcal_lunch
+            lunch = lunch_dinner[idx]["name"]
+            day_meals["lunch"] = lunch
+            day_total += calculate_calories_for_meal(lunch)
             idx += 1
 
         if idx < len(lunch_dinner):
-            meal_dinner = lunch_dinner[idx]["name"]
-            kcal_dinner = calculate_calories_for_meal(meal_dinner)
-            if day_total + kcal_dinner <= DAILY_TARGET_KCAL * 1.3:
-                day_meals["dinner"] = meal_dinner
-                day_total += kcal_dinner
+            dinner = lunch_dinner[idx]["name"]
+            kcal = calculate_calories_for_meal(dinner)
+            if day_total + kcal <= DAILY_TARGET_KCAL * 1.3:
+                day_meals["dinner"] = dinner
                 idx += 1
             else:
                 day_meals["dinner"] = "Gemüsepfanne"
@@ -306,7 +407,7 @@ EOF
 ##############################################
 # sensor.py
 ##############################################
-cat > custom_components/weekly_meal_planner/sensor.py << 'EOF'
+cat > custom_components/$DOMAIN/sensor.py << 'EOF'
 from homeassistant.helpers.entity import Entity
 from .mealplanner import generate_shopping_list, calculate_calories_for_meal, week_plan
 
@@ -356,58 +457,48 @@ class MealCaloriesSensor(Entity):
             "difference": round(total - WEEKLY_TARGET_KCAL, 2)
         }
 EOF
-
 ##############################################
-# Frontend JS
+# Frontend: weekly_meal_planner.js
 ##############################################
-cat > www/weekly_meal_planner/weekly_meal_planner.js << 'EOF'
+cat > www/$DOMAIN/weekly_meal_planner.js << 'EOF'
 class WeeklyMealPlannerCard extends HTMLElement {
-  setConfig(config) {
-    this.config = config;
-  }
-
+  setConfig(config) { this.config = config; }
   set hass(hass) {
     this._hass = hass;
-    if (!this.rendered) {
-      this.render();
-      this.rendered = true;
-    }
+    if (!this.rendered) { this.render(); this.rendered = true; }
   }
 
   render() {
     this.innerHTML = `
       <style>
-        .meal-form { margin: 10px 0; padding: 10px; border: 1px solid #ccc; }
+        .meal-form { margin: 10px; padding: 10px; border: 1px solid #ccc; }
         .ingredient-row { display: flex; gap: 5px; margin-bottom: 5px; }
         .ingredient-row input { flex: 1; }
-        .day { padding: 10px; border-bottom: 1px solid #ccc; }
-        .title { font-weight: bold; }
       </style>
 
       <div class="meal-form">
-        <h3>Neues Gericht anlegen</h3>
-        <input id="meal_name" placeholder="Name des Gerichts">
-        <input id="meal_type" placeholder="meal_type (breakfast/lunch/dinner)">
+        <h3>Neues Gericht</h3>
+        <input id="meal_name" placeholder="Name">
+        <input id="meal_type" placeholder="breakfast/lunch/dinner">
 
         <div id="ingredients_container"></div>
         <button id="add_ingredient">Zutat hinzufügen</button>
         <br><br>
-        <button id="save_meal">Gericht speichern</button>
+        <button id="save_meal">Speichern</button>
       </div>
 
-      <button id="auto_plan">Automatisch Wochenplan erstellen</button>
+      <button id="auto_plan">Automatisch planen</button>
       <button id="regen_list">Einkaufsliste neu berechnen</button>
     `;
 
     const container = this.querySelector("#ingredients_container");
-    const addBtn = this.querySelector("#add_ingredient");
-    addBtn.onclick = () => {
+    this.querySelector("#add_ingredient").onclick = () => {
       const row = document.createElement("div");
       row.className = "ingredient-row";
       row.innerHTML = `
-        <input placeholder="Zutat (z.B. Eier)">
-        <input placeholder="Menge (z.B. 3)">
-        <input placeholder="Einheit (Stück/g/ml)">
+        <input placeholder="Zutat">
+        <input placeholder="Menge">
+        <input placeholder="Einheit">
       `;
       container.appendChild(row);
     };
@@ -420,13 +511,12 @@ class WeeklyMealPlannerCard extends HTMLElement {
       const ingredients = {};
 
       rows.forEach(row => {
-        const inputs = row.querySelectorAll("input");
-        const item = inputs[0].value;
-        const amount = parseFloat(inputs[1].value);
-        const unit = inputs[2].value;
-
-        if (item && !isNaN(amount) && unit) {
-          ingredients[item] = { amount, unit };
+        const [item, amount, unit] = row.querySelectorAll("input");
+        if (item.value && amount.value && unit.value) {
+          ingredients[item.value] = {
+            amount: parseFloat(amount.value),
+            unit: unit.value
+          };
         }
       });
 
@@ -451,9 +541,9 @@ customElements.define("weekly-meal-planner-card", WeeklyMealPlannerCard);
 EOF
 
 ##############################################
-# CSS
+# Frontend: weekly_meal_planner.css
 ##############################################
-cat > www/weekly_meal_planner/weekly_meal_planner.css << 'EOF'
+cat > www/$DOMAIN/weekly_meal_planner.css << 'EOF'
 .meal-form {
   background: #f7f7f7;
   padding: 10px;
@@ -472,4 +562,9 @@ cat > www/weekly_meal_planner/weekly_meal_planner.css << 'EOF'
 }
 EOF
 
-echo "Alle Dateien wurden erfolgreich erstellt und befüllt!"
+##############################################
+# Abschluss
+##############################################
+echo "Full-Setup abgeschlossen. Bitte git add/commit/push ausführen."
+echo "Dein Repository ist jetzt vollständig HACS-ready, mit Config-Flow, Release-Workflow, Versionierung und Frontend."
+

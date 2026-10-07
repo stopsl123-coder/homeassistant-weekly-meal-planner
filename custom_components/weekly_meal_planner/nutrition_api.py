@@ -1,16 +1,22 @@
 import requests
 
-API_KEY = "DEIN_API_KEY_HIER"
-BASE_URL = "https://api.nal.usda.gov/fdc/v1/foods/search"
+API_KEY = None
+
+def set_api_key(key):
+    global API_KEY
+    API_KEY = key
 
 def get_nutrition_for_item(item_name):
+    if not API_KEY:
+        raise RuntimeError("USDA API-Key nicht gesetzt!")
+
     params = {
         "api_key": API_KEY,
         "query": item_name,
         "pageSize": 1
     }
 
-    response = requests.get(BASE_URL, params=params)
+    response = requests.get("https://api.nal.usda.gov/fdc/v1/foods/search", params=params)
     response.raise_for_status()
     data = response.json()
 

@@ -1,50 +1,41 @@
 class WeeklyMealPlannerCard extends HTMLElement {
-  setConfig(config) {
-    this.config = config;
-  }
-
+  setConfig(config) { this.config = config; }
   set hass(hass) {
     this._hass = hass;
-    if (!this.rendered) {
-      this.render();
-      this.rendered = true;
-    }
+    if (!this.rendered) { this.render(); this.rendered = true; }
   }
 
   render() {
     this.innerHTML = `
       <style>
-        .meal-form { margin: 10px 0; padding: 10px; border: 1px solid #ccc; }
+        .meal-form { margin: 10px; padding: 10px; border: 1px solid #ccc; }
         .ingredient-row { display: flex; gap: 5px; margin-bottom: 5px; }
         .ingredient-row input { flex: 1; }
-        .day { padding: 10px; border-bottom: 1px solid #ccc; }
-        .title { font-weight: bold; }
       </style>
 
       <div class="meal-form">
-        <h3>Neues Gericht anlegen</h3>
-        <input id="meal_name" placeholder="Name des Gerichts">
-        <input id="meal_type" placeholder="meal_type (breakfast/lunch/dinner)">
+        <h3>Neues Gericht</h3>
+        <input id="meal_name" placeholder="Name">
+        <input id="meal_type" placeholder="breakfast/lunch/dinner">
 
         <div id="ingredients_container"></div>
         <button id="add_ingredient">Zutat hinzufügen</button>
         <br><br>
-        <button id="save_meal">Gericht speichern</button>
+        <button id="save_meal">Speichern</button>
       </div>
 
-      <button id="auto_plan">Automatisch Wochenplan erstellen</button>
+      <button id="auto_plan">Automatisch planen</button>
       <button id="regen_list">Einkaufsliste neu berechnen</button>
     `;
 
     const container = this.querySelector("#ingredients_container");
-    const addBtn = this.querySelector("#add_ingredient");
-    addBtn.onclick = () => {
+    this.querySelector("#add_ingredient").onclick = () => {
       const row = document.createElement("div");
       row.className = "ingredient-row";
       row.innerHTML = `
-        <input placeholder="Zutat (z.B. Eier)">
-        <input placeholder="Menge (z.B. 3)">
-        <input placeholder="Einheit (Stück/g/ml)">
+        <input placeholder="Zutat">
+        <input placeholder="Menge">
+        <input placeholder="Einheit">
       `;
       container.appendChild(row);
     };
@@ -57,13 +48,12 @@ class WeeklyMealPlannerCard extends HTMLElement {
       const ingredients = {};
 
       rows.forEach(row => {
-        const inputs = row.querySelectorAll("input");
-        const item = inputs[0].value;
-        const amount = parseFloat(inputs[1].value);
-        const unit = inputs[2].value;
-
-        if (item && !isNaN(amount) && unit) {
-          ingredients[item] = { amount, unit };
+        const [item, amount, unit] = row.querySelectorAll("input");
+        if (item.value && amount.value && unit.value) {
+          ingredients[item.value] = {
+            amount: parseFloat(amount.value),
+            unit: unit.value
+          };
         }
       });
 
