@@ -1,0 +1,18 @@
+add_meal:
+  description: Fügt ein neues Gericht zur Datenbank hinzu
+  fields:
+    name:
+      description: Name des Gerichts
+      example: "Hähnchen mit Reis"
+    meal_type:
+      description: Art der Mahlzeit
+      example: "lunch"
+    ingredients:
+      description: Zutaten als JSON
+      example: '{"Hähnchen": {"amount": 200, "unit": "g"}, "Reis": {"amount": 150, "unit": "g"}}'
+
+generate_shopping_list:
+  description: Generiert die Einkaufsliste
+
+generate_week_plan:
+  description: Erzeugt einen einfachen Wochenplan nach Kalorienziel
