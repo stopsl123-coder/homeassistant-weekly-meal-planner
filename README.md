@@ -67,6 +67,10 @@ Eine vorhandene YAML-Konfiguration mit `weekly_meal_planner: api_key:` wird
 automatisch in einen Config-Entry importiert. Den YAML-Block nach dem Neustart
 entfernen.
 
+Eine ausführliche Schritt-für-Schritt-Anleitung zum Einrichten, Speichern von
+Rezepten und Anzeigen des Kalenders findest du in
+[docs/ANLEITUNG.md](docs/ANLEITUNG.md).
+
 ## Services
 
 `weekly_meal_planner.add_meal` erwartet Rezeptname, Mahlzeitentyp

@@ -5,12 +5,62 @@ class WeeklyMealPlannerCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+    this.subscribeToNutritionSearchUpdates().catch((error) => {
+      console.error("Unable to subscribe to USDA search updates", error);
+    });
     if (!this.rendered) {
       this.render();
       this.rendered = true;
     }
     this.updateDashboard();
     this.updateNutritionSearchResults();
+  }
+
+  async subscribeToNutritionSearchUpdates() {
+    if (typeof this._nutritionSearchSubscription === "function") return;
+    if (this._nutritionSearchSubscription) {
+      await this._nutritionSearchSubscription;
+      return;
+    }
+    if (!this._hass?.connection) return;
+
+    const generation = this._nutritionSearchGeneration || 0;
+    this._nutritionSearchSubscription = this._hass.connection
+      .subscribeEvents(
+        (event) => {
+          if (
+            event.data.entity_id === "sensor.weekly_meal_planner_shopping_list"
+          ) {
+            this.updateNutritionSearchResults(
+              event.data.new_state?.attributes.latest_nutrition_search,
+            );
+          }
+        },
+        "state_changed",
+      )
+      .then((unsubscribe) => {
+        if (generation !== (this._nutritionSearchGeneration || 0)) {
+          unsubscribe();
+          return;
+        }
+        this._nutritionSearchSubscription = unsubscribe;
+      })
+      .catch((error) => {
+        if (generation === (this._nutritionSearchGeneration || 0)) {
+          this._nutritionSearchSubscription = undefined;
+        }
+        throw error;
+      });
+    await this._nutritionSearchSubscription;
+  }
+
+  disconnectedCallback() {
+    this._nutritionSearchGeneration =
+      (this._nutritionSearchGeneration || 0) + 1;
+    if (typeof this._nutritionSearchSubscription === "function") {
+      this._nutritionSearchSubscription();
+    }
+    this._nutritionSearchSubscription = undefined;
   }
 
   updateDashboard() {
@@ -54,8 +104,8 @@ class WeeklyMealPlannerCard extends HTMLElement {
     }
   }
 
-  updateNutritionSearchResults() {
-    const search =
+  updateNutritionSearchResults(search) {
+    search ??=
       this._hass?.states["sensor.weekly_meal_planner_shopping_list"]
         ?.attributes.latest_nutrition_search;
     if (!search?.query || !Array.isArray(search.results)) return;
@@ -182,6 +232,7 @@ class WeeklyMealPlannerCard extends HTMLElement {
           return;
         }
         try {
+          await this.subscribeToNutritionSearchUpdates();
           await this._hass.callService(
             "weekly_meal_planner",
             "search_ingredient",
