@@ -203,7 +203,7 @@ class WeeklyMealPlannerCard extends HTMLElement {
         const recipe = recipes.find((item) => item.name === recipeName);
         const tile = document.createElement("button");
         tile.type = "button";
-        tile.className = "meal-tile";
+        tile.className = recipeName ? "meal-tile is-planned" : "meal-tile is-empty";
         tile.setAttribute(
           "aria-label",
           `${{ breakfast: "Frühstück", lunch: "Mittagessen", dinner: "Abendessen" }[mealType]} am ${day}: ${recipeName || "Gericht auswählen"}`,
@@ -308,32 +308,87 @@ class WeeklyMealPlannerCard extends HTMLElement {
   render() {
     this.innerHTML = `
       <style>
-        .meal-form { display: grid; gap: 8px; }
-        .ingredient-row { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 8px; margin-bottom: 8px; }
-        .ingredient-row input, .ingredient-row select { min-width: 0; }
+        weekly-meal-planner-card { display: block; }
+        ha-card.planner-card {
+          overflow: hidden;
+          border: 1px solid var(--divider-color);
+          border-radius: 24px;
+          background: var(--ha-card-background, var(--card-background-color));
+          box-shadow: 0 18px 48px rgba(0, 0, 0, 0.12);
+        }
+        .planner-card > .card-content { padding: clamp(18px, 3vw, 30px); }
+        .planner-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 24px; }
+        .planner-eyebrow { margin: 0 0 6px; color: var(--primary-color); font-size: .72rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+        .planner-title { margin: 0; font-size: clamp(1.45rem, 2vw, 2rem); font-weight: 750; letter-spacing: -.035em; line-height: 1.15; }
+        .planner-description { margin: 8px 0 0; color: var(--secondary-text-color); font-size: .92rem; }
+        .week-count { flex: 0 0 auto; padding: 8px 12px; border: 1px solid var(--divider-color); border-radius: 999px; background: var(--secondary-background-color); color: var(--secondary-text-color); font-size: .8rem; font-weight: 700; }
+        .week-plan-viewport { overflow-x: auto; padding: 2px 2px 10px; scrollbar-width: thin; }
+        .week-plan-viewport:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+        .week-plan { display: grid; grid-template-columns: repeat(7, minmax(112px, 1fr)); min-width: 840px; gap: 10px; margin-bottom: 14px; }
+        .week-day { display: flex; min-width: 0; flex-direction: column; padding: 10px; border: 1px solid var(--divider-color); border-radius: 18px; background: var(--secondary-background-color); overflow-wrap: anywhere; }
+        .week-day h4 { display: flex; min-height: 2.5em; align-items: center; margin: 0 0 4px; padding: 2px 2px 10px; border-bottom: 1px solid var(--divider-color); font-size: .86rem; font-weight: 750; line-height: 1.25; text-transform: capitalize; }
+        .meal-tile { display: grid; gap: 7px; width: 100%; min-height: 88px; margin-top: 8px; padding: 10px 9px; appearance: none; border: 1px solid var(--divider-color); border-radius: 13px; background: var(--ha-card-background, var(--card-background-color)); color: var(--primary-text-color); text-align: left; white-space: normal; overflow-wrap: anywhere; cursor: pointer; transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+        .meal-tile:hover { transform: translateY(-2px); border-color: var(--primary-color); box-shadow: 0 7px 18px rgba(0, 0, 0, .1); }
+        .meal-tile:focus-visible, .planner-button:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+        .meal-tile strong { color: var(--secondary-text-color); font-size: .65rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+        .meal-tile span { font-size: .82rem; font-weight: 650; line-height: 1.35; }
+        .meal-tile small { width: fit-content; padding: 3px 7px; border-radius: 999px; background: var(--secondary-background-color); color: var(--secondary-text-color); font-size: .68rem; }
+        .meal-tile.is-empty { align-content: center; border-style: dashed; background: transparent; }
+        .meal-tile.is-empty span { color: var(--secondary-text-color); font-weight: 550; }
+        .planner-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 18px; }
+        .planner-button { min-height: 42px; padding: 9px 16px; border: 1px solid var(--divider-color); border-radius: 12px; background: var(--secondary-background-color); color: var(--primary-text-color); font: inherit; font-size: .86rem; font-weight: 700; cursor: pointer; transition: transform .18s ease, box-shadow .18s ease, background .18s ease; }
+        .planner-button:hover { transform: translateY(-1px); box-shadow: 0 5px 14px rgba(0, 0, 0, .12); }
+        .planner-button.primary { border-color: var(--primary-color); background: var(--primary-color); color: var(--text-primary-color, #fff); }
+        .meal-planner-status { min-height: 1.5em; margin: 14px 0 0; color: var(--secondary-text-color); font-size: .86rem; }
+        .meal-form { display: grid; gap: 12px; }
+        .meal-form h3, weekly-meal-planner-card #meal_dialog h3 { margin: 0 0 6px; font-size: 1.35rem; letter-spacing: -.02em; }
+        .ingredient-row { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 8px; margin-bottom: 10px; padding: 12px; border: 1px solid var(--divider-color); border-radius: 14px; background: var(--secondary-background-color); }
+        .ingredient-row input, .ingredient-row select, weekly-meal-planner-card dialog input, weekly-meal-planner-card dialog select { box-sizing: border-box; min-width: 0; min-height: 42px; padding: 9px 11px; border: 1px solid var(--divider-color); border-radius: 10px; background: var(--ha-card-background, var(--card-background-color)); color: var(--primary-text-color); font: inherit; }
         .ingredient-row button, .ingredient-row .piece-weight, .ingredient-row .usda-match { grid-column: 1 / -1; }
-        .piece-weight { display: none; gap: 4px; }
+        .ingredient-row button, #add_ingredient, #save_meal, weekly-meal-planner-card .dialog-actions button { min-height: 40px; padding: 8px 13px; border: 1px solid var(--divider-color); border-radius: 10px; background: var(--secondary-background-color); color: var(--primary-text-color); font: inherit; font-weight: 650; cursor: pointer; }
+        #save_meal, #save_planned_meal { border-color: var(--primary-color); background: var(--primary-color); color: var(--text-primary-color, #fff); }
+        .piece-weight { display: none; gap: 6px; color: var(--secondary-text-color); font-size: .82rem; }
         .piece-weight.visible { display: grid; }
-        .week-plan { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin-bottom: 16px; }
-        .week-day { min-width: 0; padding: 6px; border: 1px solid var(--divider-color); border-radius: 6px; overflow-wrap: anywhere; }
-        .week-day h4 { margin: 0 0 4px; }
-        .meal-tile { display: grid; gap: 4px; width: 100%; min-height: 72px; margin-top: 6px; padding: 6px 4px; text-align: left; white-space: normal; overflow-wrap: anywhere; }
-        .meal-tile small { color: var(--secondary-text-color); }
-        weekly-meal-planner-card dialog { width: min(520px, calc(100vw - 32px)); max-height: 85vh; overflow: auto; color: var(--primary-text-color); background: var(--card-background-color); border: 1px solid var(--divider-color); border-radius: 12px; }
-        weekly-meal-planner-card dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
-        .dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 16px; }
-        .recipe-dialog-content { padding: 8px; }
-        .meal-planner-status { min-height: 1.5em; }
+        weekly-meal-planner-card dialog { box-sizing: border-box; width: min(560px, calc(100vw - 32px)); max-height: 85vh; padding: 24px; overflow: auto; color: var(--primary-text-color); background: var(--ha-card-background, var(--card-background-color)); border: 1px solid var(--divider-color); border-radius: 22px; box-shadow: 0 24px 80px rgba(0, 0, 0, .24); }
+        weekly-meal-planner-card dialog::backdrop { background: rgba(12, 18, 28, .58); backdrop-filter: blur(5px); }
+        #meal_dialog label { display: block; margin: 12px 0 6px; color: var(--secondary-text-color); font-size: .82rem; font-weight: 700; }
+        #meal_dialog select { width: 100%; }
+        weekly-meal-planner-card .dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+        .recipe-dialog-content { padding: 2px; }
+        weekly-meal-planner-card #recipe_dialog .meal-form > p { color: var(--secondary-text-color); font-size: .84rem; line-height: 1.5; }
+        #meal_choice_empty { padding: 12px; border-radius: 12px; background: var(--secondary-background-color); color: var(--secondary-text-color); }
+        @media (max-width: 600px) {
+          .planner-header { gap: 10px; }
+          .week-count { padding: 6px 9px; font-size: .72rem; }
+          .planner-actions { align-items: stretch; }
+          .planner-actions button { flex: 1 1 100%; }
+          weekly-meal-planner-card dialog { padding: 18px; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .meal-tile, .planner-button { transition: none; }
+          .meal-tile:hover, .planner-button:hover { transform: none; }
+        }
       </style>
 
-      <ha-card header="Wochenplaner">
+      <ha-card class="planner-card">
         <div class="card-content">
-          <h3>Diese Woche</h3>
-          <div id="week_plan" class="week-plan"></div>
-          <button id="new_meal" type="button">Neues Gericht anlegen</button>
+          <header class="planner-header">
+            <div>
+              <p class="planner-eyebrow">Dein Wochenplan</p>
+              <h2 class="planner-title">Deine Woche</h2>
+              <p class="planner-description">Frühstück, Mittag- und Abendessen auf einen Blick.</p>
+            </div>
+            <span class="week-count">7 Tage</span>
+          </header>
+          <div class="week-plan-viewport" role="region" aria-label="Wochenübersicht" tabindex="0">
+            <div id="week_plan" class="week-plan"></div>
+          </div>
+          <div class="planner-actions">
+            <button id="new_meal" class="planner-button" type="button">Neues Gericht</button>
+            <button id="auto_plan" class="planner-button primary" type="button">Woche automatisch planen</button>
+            <button id="regen_list" class="planner-button" type="button">Einkaufsliste aktualisieren</button>
+          </div>
           <p id="status" class="meal-planner-status" role="status" aria-live="polite"></p>
-          <button id="auto_plan" type="button">Woche automatisch planen</button>
-          <button id="regen_list" type="button">Einkaufsliste aktualisieren</button>
         </div>
         <dialog id="meal_dialog">
           <h3 id="meal_dialog_title">Gericht auswählen</h3>
