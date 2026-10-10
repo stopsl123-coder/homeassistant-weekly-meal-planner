@@ -397,7 +397,7 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
             raise HomeAssistantError(
                 "Für diesen Tag ist noch kein entsprechendes Gericht eingeplant."
             )
-        await coordinator.async_request_refresh()
+        await coordinator.async_refresh()
 
     hass.services.async_register(
         DOMAIN, "add_meal", handle_add_meal, schema=ADD_MEAL_SCHEMA

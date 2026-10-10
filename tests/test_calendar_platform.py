@@ -92,7 +92,6 @@ async def test_weekly_plan_is_available_in_home_assistant_calendar(hass) -> None
         database.get_week_plan, week_start.isoformat()
     )
     assert updated_plan[week_start.isoformat()]["lunch"] == "Salat"
-    await coordinator.async_request_refresh()
     assert coordinator.data["nutrition"]["per_day"][week_start.isoformat()] == 250
     events = await calendar.async_get_events(
         hass, start, start + timedelta(days=7)
