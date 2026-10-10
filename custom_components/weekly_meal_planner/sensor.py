@@ -94,4 +94,6 @@ class MealCaloriesSensor(CoordinatorEntity, SensorEntity):
             "difference": nutrition["difference"],
             "missing_nutrition": nutrition["missing_nutrition"],
             "plan": self.coordinator.data["plan"],
+            "week_days": self.coordinator.data["week_days"],
+            "meals": self.coordinator.data["meals"],
         }

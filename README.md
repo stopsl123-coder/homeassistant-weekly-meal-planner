@@ -1,7 +1,8 @@
 # Weekly Meal Planner
 
-Home-Assistant-Integration zum Speichern von Rezepten, Planen von Mittag- und
-Abendessen, Berechnen von Nährwerten und Erstellen einer Einkaufsliste.
+Home-Assistant-Integration zum Speichern von Rezepten, Planen einer Woche mit
+Frühstück, Mittag- und Abendessen, Berechnen von Nährwerten und Erstellen einer
+Einkaufsliste.
 
 ## Funktionen
 
@@ -9,8 +10,10 @@ Abendessen, Berechnen von Nährwerten und Erstellen einer Einkaufsliste.
 - Nährwertabfrage bei USDA FoodData Central beim Speichern eines Rezepts.
 - Sensoren für Anzahl der Einkaufslistenpositionen sowie Wochenkalorien und
   Makros.
+- Eine Wochenübersicht mit Frühstücks-, Mittags- und Abendessen-Kacheln zum
+  Auswählen gespeicherter Gerichte.
 - Einen nativen Home-Assistant-Kalender mit einer Tagesübersicht der geplanten
-  Mittag- und Abendessen.
+  Mahlzeiten.
 - Einkaufsmenge wird nur bei kompatiblen Einheiten umgerechnet und summiert.
 - Lovelace-Karte zum Eingeben von Rezepten und Ausführen der Planer-Aktionen.
 - Geplante Gerichte in der Wochenübersicht austauschen und kcal pro Portion

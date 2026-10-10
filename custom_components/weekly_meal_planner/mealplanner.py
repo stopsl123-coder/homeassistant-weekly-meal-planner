@@ -270,6 +270,7 @@ def build_dashboard_data(
     household_servings: int,
     target_kcal: int,
     food_search: dict[str, Any],
+    week_start: date,
 ) -> dict[str, Any]:
     meal_summaries = []
     for meal in meals:
@@ -289,6 +290,10 @@ def build_dashboard_data(
         )
     return {
         "plan": plan,
+        "week_days": [
+            (week_start + timedelta(days=offset)).isoformat()
+            for offset in range(7)
+        ],
         "meals": meal_summaries,
         "shopping_list": generate_shopping_list(plan, meals, household_servings),
         "nutrition": calculate_week_nutrition(plan, meals, target_kcal),

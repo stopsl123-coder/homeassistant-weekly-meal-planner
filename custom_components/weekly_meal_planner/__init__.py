@@ -82,6 +82,7 @@ class MealPlannerCoordinator(DataUpdateCoordinator):
             self.settings["household_servings"],
             self.settings["target_kcal"],
             food_search,
+            start,
         )
 
     def _load_dashboard_inputs(
@@ -183,7 +184,7 @@ SET_PLANNED_MEAL_SCHEMA = vol.Schema(
         vol.Required("day"): vol.All(
             str, vol.Length(min=10, max=10)
         ),
-        vol.Required("meal_type"): vol.In({"lunch", "dinner"}),
+        vol.Required("meal_type"): vol.In(MEAL_TYPES),
         vol.Required("meal_name"): vol.All(
             str, str.strip, vol.Length(min=1, max=100)
         ),
@@ -353,6 +354,12 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
             raise HomeAssistantError(
                 "Vor der Wochenplanung mindestens ein Mittag- oder Abendessen speichern."
             )
+        existing_plan = await hass.async_add_executor_job(
+            database.get_week_plan, start.isoformat()
+        )
+        for day, day_meals in existing_plan.items():
+            if "breakfast" in day_meals:
+                plan.setdefault(day, {})["breakfast"] = day_meals["breakfast"]
         await hass.async_add_executor_job(
             database.replace_week_plan, start.isoformat(), plan
         )
@@ -394,9 +401,7 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
             meal["name"],
         )
         if not updated:
-            raise HomeAssistantError(
-                "Für diesen Tag ist noch kein entsprechendes Gericht eingeplant."
-            )
+            raise HomeAssistantError("Gericht konnte nicht in den Plan übernommen werden.")
         await coordinator.async_refresh()
 
     hass.services.async_register(

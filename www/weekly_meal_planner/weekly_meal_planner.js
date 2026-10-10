@@ -70,25 +70,94 @@ class WeeklyMealPlannerCard extends HTMLElement {
     status.style.color = isError ? "var(--error-color)" : "";
   }
 
+  openMealDialog(day, mealType, mealName, recipes) {
+    const labels = {
+      breakfast: "Frühstück",
+      lunch: "Mittagessen",
+      dinner: "Abendessen",
+    };
+    this._selectedMealSlot = { day, mealType };
+    const dialog = this.querySelector("#meal_dialog");
+    const select = this.querySelector("#meal_choice");
+    const save = this.querySelector("#save_planned_meal");
+    this.querySelector("#meal_dialog_title").textContent =
+      `${labels[mealType]} · ${new Intl.DateTimeFormat("de-DE", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+      }).format(new Date(`${day}T12:00:00`))}`;
+    select.replaceChildren();
+    for (const recipe of recipes.filter((item) => item.meal_type === mealType)) {
+      const option = document.createElement("option");
+      option.value = recipe.name;
+      option.textContent =
+        recipe.calories == null
+          ? `${recipe.name} · Kalorien unbekannt`
+          : `${recipe.name} · ${Math.round(recipe.calories)} kcal pro Portion`;
+      select.appendChild(option);
+    }
+    if (mealName && !recipes.some((recipe) => recipe.name === mealName)) {
+      const option = document.createElement("option");
+      option.value = mealName;
+      option.textContent = `${mealName} · nicht mehr gespeichert`;
+      select.appendChild(option);
+    }
+    select.value = mealName || select.options[0]?.value || "";
+    save.disabled = !select.value;
+    select.onchange = () => {
+      save.disabled = !select.value;
+    };
+    dialog.showModal();
+  }
+
+  async savePlannedMeal(mealName) {
+    const slot = this._selectedMealSlot;
+    if (!slot) return;
+    try {
+      await this._hass.callService("weekly_meal_planner", "set_planned_meal", {
+        day: slot.day,
+        meal_type: slot.mealType,
+        meal_name: mealName,
+      });
+      this.querySelector("#meal_dialog").close();
+      this.setPlanStatus("Gericht wurde im Wochenplan gespeichert.");
+    } catch (error) {
+      this.setPlanStatus(
+        error.message || "Gericht konnte nicht gespeichert werden.",
+        true,
+      );
+    }
+  }
+
+  openRecipeDialog(mealType, day = undefined) {
+    const dialog = this.querySelector("#recipe_dialog");
+    const typeSelect = this.querySelector("#meal_type");
+    this.querySelector("#meal_dialog").close();
+    typeSelect.value = mealType || "lunch";
+    typeSelect.disabled = Boolean(day);
+    this._pendingMealSlot = day ? { day, mealType } : undefined;
+    dialog.showModal();
+    this.querySelector("#meal_name").focus();
+  }
+
   updateDashboard() {
     const state = this._hass?.states["sensor.weekly_meal_planner_calories"];
     const plan = state?.attributes.plan || {};
     const recipes = state?.attributes.meals || [];
+    const days = state?.attributes.week_days || Object.keys(plan);
     const container = this.querySelector("#week_plan");
     if (!container) return;
 
     container.replaceChildren();
-    const entries = Object.entries(plan).sort(([first], [second]) =>
-      first.localeCompare(second),
-    );
-    if (!entries.length) {
+    if (!days.length) {
       const empty = document.createElement("p");
-      empty.textContent = "Noch kein Wochenplan. Mit „Woche automatisch planen“ starten.";
+      empty.textContent = "Wochenplan wird geladen.";
       container.appendChild(empty);
       return;
     }
 
-    for (const [day, plannedMeals] of entries) {
+    for (const day of days) {
+      const plannedMeals = plan[day] || {};
       const section = document.createElement("section");
       section.className = "week-day";
       const heading = document.createElement("h4");
@@ -98,60 +167,37 @@ class WeeklyMealPlannerCard extends HTMLElement {
         month: "short",
       }).format(new Date(`${day}T12:00:00`));
       section.appendChild(heading);
-      for (const [mealType, mealName] of Object.entries(plannedMeals)) {
-        const line = document.createElement("label");
-        line.className = "planned-meal";
-        const label = {
+      for (const mealType of ["breakfast", "lunch", "dinner"]) {
+        const recipeName = plannedMeals[mealType];
+        const recipe = recipes.find((item) => item.name === recipeName);
+        const tile = document.createElement("button");
+        tile.type = "button";
+        tile.className = "meal-tile";
+        tile.setAttribute(
+          "aria-label",
+          `${{ breakfast: "Frühstück", lunch: "Mittagessen", dinner: "Abendessen" }[mealType]} am ${day}: ${recipeName || "Gericht auswählen"}`,
+        );
+        const typeLabel = document.createElement("strong");
+        typeLabel.textContent = {
           breakfast: "Frühstück",
           lunch: "Mittagessen",
           dinner: "Abendessen",
-        }[mealType] || mealType;
-        const labelText = document.createElement("span");
-        labelText.textContent = `${label}:`;
-        const select = document.createElement("select");
-        select.setAttribute("aria-label", `${label} am ${day}`);
-        const candidates = recipes.filter((meal) => meal.meal_type === mealType);
-        if (!candidates.some((meal) => meal.name === mealName)) {
-          candidates.push({
-            name: mealName,
-            meal_type: mealType,
-            calories: null,
-          });
+        }[mealType];
+        const title = document.createElement("span");
+        title.textContent = recipeName || "+ Gericht auswählen";
+        tile.append(typeLabel, title);
+        if (recipeName) {
+          const calories = document.createElement("small");
+          calories.textContent =
+            recipe?.calories == null
+              ? "Kalorien unbekannt"
+              : `${Math.round(recipe.calories)} kcal pro Portion`;
+          tile.appendChild(calories);
         }
-        for (const meal of candidates) {
-          const option = document.createElement("option");
-          option.value = meal.name;
-          option.textContent = meal.name;
-          select.appendChild(option);
-        }
-        select.value = mealName;
-        const nutrition = recipes.find((meal) => meal.name === mealName);
-        const calories = document.createElement("span");
-        calories.textContent =
-          nutrition?.calories == null
-            ? "Kalorien unbekannt"
-            : `${Math.round(nutrition.calories)} kcal pro Portion`;
-        select.addEventListener("change", async () => {
-          select.disabled = true;
-          try {
-            await this._hass.callService(
-              "weekly_meal_planner",
-              "set_planned_meal",
-              { day, meal_type: mealType, meal_name: select.value },
-            );
-            this.setPlanStatus(`${label} am ${day} wurde geändert.`);
-          } catch (error) {
-            select.value = mealName;
-            this.setPlanStatus(
-              error.message || "Gericht konnte nicht geändert werden.",
-              true,
-            );
-          } finally {
-            select.disabled = false;
-          }
-        });
-        line.append(labelText, select, calories);
-        section.appendChild(line);
+        tile.addEventListener("click", () =>
+          this.openMealDialog(day, mealType, recipeName, recipes),
+        );
+        section.appendChild(tile);
       }
       container.appendChild(section);
     }
@@ -237,20 +283,42 @@ class WeeklyMealPlannerCard extends HTMLElement {
         .ingredient-row button, .ingredient-row .piece-weight, .ingredient-row .usda-match { grid-column: 1 / -1; }
         .piece-weight { display: none; gap: 4px; }
         .piece-weight.visible { display: grid; }
-        .week-plan { display: grid; gap: 8px; margin-bottom: 16px; }
-        .week-day { padding: 8px; border: 1px solid var(--divider-color); border-radius: 6px; }
+        .week-plan { display: grid; grid-template-columns: repeat(7, minmax(130px, 1fr)); gap: 8px; margin-bottom: 16px; overflow-x: auto; }
+        .week-day { min-width: 130px; padding: 8px; border: 1px solid var(--divider-color); border-radius: 6px; }
         .week-day h4 { margin: 0 0 4px; }
-        .planned-meal { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 4px 0; }
-        .planned-meal select { flex: 1; min-width: 140px; }
-        .planned-meal span:last-child { color: var(--secondary-text-color); }
+        .meal-tile { display: grid; gap: 4px; width: 100%; min-height: 72px; margin-top: 6px; padding: 8px; text-align: left; white-space: normal; }
+        .meal-tile small { color: var(--secondary-text-color); }
+        weekly-meal-planner-card dialog { width: min(520px, calc(100vw - 32px)); max-height: 85vh; overflow: auto; color: var(--primary-text-color); background: var(--card-background-color); border: 1px solid var(--divider-color); border-radius: 12px; }
+        weekly-meal-planner-card dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+        .dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+        .recipe-dialog-content { padding: 8px; }
+        @media (max-width: 900px) { .week-plan { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+        @media (max-width: 560px) { .week-plan { grid-template-columns: 1fr; overflow: visible; } .week-day { min-width: 0; } }
         .meal-planner-status { min-height: 1.5em; }
       </style>
 
       <ha-card header="Wochenplaner">
         <div class="card-content">
-          <h3>Wochenübersicht</h3>
+          <h3>Diese Woche</h3>
           <div id="week_plan" class="week-plan"></div>
-          <div class="meal-form">
+          <button id="new_meal" type="button">Neues Gericht anlegen</button>
+          <p id="status" class="meal-planner-status" role="status" aria-live="polite"></p>
+          <button id="auto_plan" type="button">Woche automatisch planen</button>
+          <button id="regen_list" type="button">Einkaufsliste aktualisieren</button>
+        </div>
+        <dialog id="meal_dialog">
+          <h3 id="meal_dialog_title">Gericht auswählen</h3>
+          <label for="meal_choice">Gespeichertes Gericht</label>
+          <select id="meal_choice"></select>
+          <div class="dialog-actions">
+            <button id="new_meal_for_slot" type="button">Neues Gericht anlegen</button>
+            <button id="save_planned_meal" type="button">In Wochenplan übernehmen</button>
+            <button id="close_meal_dialog" type="button">Abbrechen</button>
+          </div>
+        </dialog>
+        <dialog id="recipe_dialog">
+          <div class="recipe-dialog-content">
+            <div class="meal-form">
             <h3>Neues Gericht</h3>
             <input id="meal_name" placeholder="Gerichtname" maxlength="100" required>
             <label for="servings">Portionen pro Rezept</label>
@@ -265,10 +333,11 @@ class WeeklyMealPlannerCard extends HTMLElement {
             <button id="add_ingredient" type="button">Zutat hinzufügen</button>
             <button id="save_meal" type="button">Gericht speichern</button>
           </div>
-          <p id="status" class="meal-planner-status" role="status" aria-live="polite"></p>
-          <button id="auto_plan" type="button">Woche automatisch planen</button>
-          <button id="regen_list" type="button">Einkaufsliste aktualisieren</button>
-        </div>
+            <div class="dialog-actions">
+              <button id="close_recipe_dialog" type="button">Schließen</button>
+            </div>
+          </div>
+        </dialog>
       </ha-card>
     `;
 
@@ -278,6 +347,23 @@ class WeeklyMealPlannerCard extends HTMLElement {
       status.textContent = message;
       status.setAttribute("aria-invalid", String(isError));
     };
+
+    this.querySelector("#new_meal").onclick = () =>
+      this.openRecipeDialog(this.querySelector("#meal_type").value);
+    this.querySelector("#new_meal_for_slot").onclick = () => {
+      const slot = this._selectedMealSlot;
+      this.openRecipeDialog(slot?.mealType, slot?.day);
+    };
+    this.querySelector("#close_meal_dialog").onclick = () =>
+      this.querySelector("#meal_dialog").close();
+    this.querySelector("#save_planned_meal").onclick = () =>
+      this.savePlannedMeal(this.querySelector("#meal_choice").value);
+    this.querySelector("#close_recipe_dialog").onclick = () =>
+      this.querySelector("#recipe_dialog").close();
+    this.querySelector("#recipe_dialog").addEventListener("close", () => {
+      this._pendingMealSlot = undefined;
+      this.querySelector("#meal_type").disabled = false;
+    });
 
     this.querySelector("#add_ingredient").onclick = () => {
       const row = document.createElement("div");
@@ -445,10 +531,35 @@ class WeeklyMealPlannerCard extends HTMLElement {
           servings,
           ingredients,
         });
-        setStatus("Gericht gespeichert und Nährwerte ergänzt.");
       } catch (error) {
         setStatus(error.message || "Gericht konnte nicht gespeichert werden.", true);
+        return;
       }
+
+      const slot = this._pendingMealSlot;
+      this._pendingMealSlot = undefined;
+      if (slot) {
+        try {
+          await this._hass.callService(
+            "weekly_meal_planner",
+            "set_planned_meal",
+            { day: slot.day, meal_type: slot.mealType, meal_name: name },
+          );
+        } catch (error) {
+          setStatus(
+            `Gericht gespeichert, aber nicht eingeplant: ${error.message}`,
+            true,
+          );
+          this.querySelector("#recipe_dialog").close();
+          return;
+        }
+      }
+      setStatus(
+        slot
+          ? "Gericht gespeichert und im Wochenplan eingetragen."
+          : "Gericht gespeichert und Nährwerte ergänzt.",
+      );
+      this.querySelector("#recipe_dialog").close();
     };
 
     this.querySelector("#auto_plan").onclick = async () => {

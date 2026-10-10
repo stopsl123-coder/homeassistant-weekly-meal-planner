@@ -110,12 +110,15 @@ class MealPlannerDatabaseTests(unittest.TestCase):
         self.assertTrue(
             self.database.set_planned_meal("2026-10-05", "lunch", "Salad")
         )
-        self.assertFalse(
+        self.assertTrue(
             self.database.set_planned_meal("2026-10-06", "lunch", "Salad")
         )
         self.assertEqual(
-            self.database.get_week_plan("2026-10-05")["2026-10-05"],
-            {"lunch": "Salad", "dinner": "Curry"},
+            self.database.get_week_plan("2026-10-05"),
+            {
+                "2026-10-05": {"lunch": "Salad", "dinner": "Curry"},
+                "2026-10-06": {"lunch": "Salad"},
+            },
         )
 
     def test_legacy_database_adds_servings_without_losing_recipe_data(self) -> None:
@@ -210,8 +213,13 @@ class MealPlannerLogicTests(unittest.TestCase):
             household_servings=2,
             target_kcal=2000,
             food_search={"query": "", "results": []},
+            week_start=date(2026, 10, 5),
         )
 
+        self.assertEqual(
+            dashboard["week_days"],
+            [f"2026-10-{day:02}" for day in range(5, 12)],
+        )
         self.assertEqual(
             dashboard["meals"],
             [{"name": "Soup", "meal_type": "lunch", "calories": 80}],

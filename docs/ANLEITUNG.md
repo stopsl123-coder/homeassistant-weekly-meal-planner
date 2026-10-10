@@ -62,7 +62,8 @@ Essensplan auch ohne Rezeptkarte an.
   automatischen Wochenplanung ausgeschlossen.
 
 Der automatische Planer plant Mittag- und Abendessen. Frühstücksrezepte können
-gespeichert werden, erscheinen aber nicht im automatisch erstellten Wochenplan.
+gespeichert und über die Frühstücks-Kacheln der Wochenübersicht manuell
+eingeplant werden.
 
 ## 4. Erstes Rezept anlegen
 
@@ -134,16 +135,20 @@ Ein Neustart von Home Assistant löscht sie nicht.
    Sensoren werden ebenfalls aktualisiert.
 
 Erneutes Erstellen ersetzt den gespeicherten Plan für die aktuelle Woche.
-Gespeicherte Rezepte bleiben erhalten.
+Gespeicherte Rezepte und manuell geplante Frühstücke bleiben erhalten.
 
-In der Wochenübersicht kannst du geplante Mittag- und Abendessen über die
-Auswahlliste neben dem Tag austauschen. Es werden gespeicherte Gerichte des
-passenden Typs angeboten; die Änderung wird direkt gespeichert und ändert nur
-diese Mahlzeit der aktuellen Woche. Der native Kalender zeigt den geänderten
-Plan danach ebenfalls an. Neben jedem Gericht stehen die berechneten kcal pro
-Portion. Sie ergeben sich aus den Nährwerten aller Zutaten und den
-Rezeptportionen. Gerichte mit fehlenden Gewichtsangaben zeigen keine
-Kalorienzahl.
+Die Wochenübersicht zeigt Montag bis Sonntag mit je einer Kachel für Frühstück,
+Mittagessen und Abendessen. Klicke auf eine Kachel, um gespeicherte Gerichte
+des passenden Typs auszuwählen und zu übernehmen. Freie Kacheln lassen sich
+genauso belegen. **Neues Gericht anlegen** öffnet Rezeptformular; startest du
+es aus einer Kachel, wird neues Gericht nach dem Speichern direkt dort
+eingeplant. Änderungen gelten nur für aktuelle Woche; nativer Kalender wird
+ebenfalls aktualisiert.
+
+Neben geplanten Gerichten stehen berechnete kcal pro Portion. Summe basiert auf
+Nährwerten aller Zutaten geteilt durch Rezeptportionen. Gerichte mit fehlenden
+Gewichtsangaben zeigen keine Kalorienzahl. Automatische Planung erzeugt
+Mittag- und Abendessen, lässt manuell geplante Frühstücke aber bestehen.
 
 ## 7. Essensplan im Home-Assistant-Kalender anzeigen
 

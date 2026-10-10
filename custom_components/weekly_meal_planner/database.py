@@ -254,12 +254,14 @@ class MealPlannerDatabase:
         with self._connect() as connection:
             cursor = connection.execute(
                 """
-                UPDATE week_plan SET meal_name = ?
-                WHERE day = ? AND meal_type = ?
+                INSERT INTO week_plan (day, meal_type, meal_name)
+                VALUES (?, ?, ?)
+                ON CONFLICT(day, meal_type) DO UPDATE SET
+                    meal_name = excluded.meal_name
                 """,
-                (meal_name, day, meal_type),
+                (day, meal_type, meal_name),
             )
-        return cursor.rowcount == 1
+        return cursor.rowcount > 0
 
     def get_week_plan(self, week_start: str) -> dict[str, dict[str, str]]:
         with self._connect() as connection:

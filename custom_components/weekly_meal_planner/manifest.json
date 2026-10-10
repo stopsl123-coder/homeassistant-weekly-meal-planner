@@ -1,7 +1,7 @@
 {
 "domain": "weekly_meal_planner",
 "name": "Weekly Meal Planner",
-"version": "1.5.5",
+"version": "1.6.0",
 "documentation": "https://github.com/stopsl123-coder/homeassistant-weekly-meal-planner",
 "codeowners": ["@stopsl123-coder"],
 "iot_class": "cloud_polling",
