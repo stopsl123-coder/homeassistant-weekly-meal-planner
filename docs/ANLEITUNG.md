@@ -136,6 +136,15 @@ Ein Neustart von Home Assistant löscht sie nicht.
 Erneutes Erstellen ersetzt den gespeicherten Plan für die aktuelle Woche.
 Gespeicherte Rezepte bleiben erhalten.
 
+In der Wochenübersicht kannst du geplante Mittag- und Abendessen über die
+Auswahlliste neben dem Tag austauschen. Es werden gespeicherte Gerichte des
+passenden Typs angeboten; die Änderung wird direkt gespeichert und ändert nur
+diese Mahlzeit der aktuellen Woche. Der native Kalender zeigt den geänderten
+Plan danach ebenfalls an. Neben jedem Gericht stehen die berechneten kcal pro
+Portion. Sie ergeben sich aus den Nährwerten aller Zutaten und den
+Rezeptportionen. Gerichte mit fehlenden Gewichtsangaben zeigen keine
+Kalorienzahl.
+
 ## 7. Essensplan im Home-Assistant-Kalender anzeigen
 
 Füge native **Kalender**-Karte zum Dashboard hinzu und verwende:

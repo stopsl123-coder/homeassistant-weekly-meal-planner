@@ -67,12 +67,22 @@ class WeeklyMealPlanCalendar(CoordinatorEntity, CalendarEntity):
 
     def _events(self) -> list[CalendarEvent]:
         events: list[CalendarEvent] = []
+        meal_calories = {
+            meal["name"]: meal["calories"]
+            for meal in self.coordinator.data["meals"]
+        }
         for day, meals in sorted(self.coordinator.data["plan"].items()):
             event_day = date.fromisoformat(day)
             if not meals:
                 continue
             summary = "Essensplan: " + " · ".join(
-                f"{self._meal_type_name(meal_type)}: {meal_name}"
+                (
+                    f"{self._meal_type_name(meal_type)}: {meal_name} "
+                    f"({round(meal_calories[meal_name])} kcal pro Portion)"
+                    if meal_calories.get(meal_name) is not None
+                    else f"{self._meal_type_name(meal_type)}: {meal_name} "
+                    "(Kalorien unbekannt)"
+                )
                 for meal_type, meal_name in meals.items()
             )
             nutrition = self.coordinator.data["nutrition"]["per_day"].get(day)

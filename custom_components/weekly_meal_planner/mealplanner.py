@@ -271,8 +271,25 @@ def build_dashboard_data(
     target_kcal: int,
     food_search: dict[str, Any],
 ) -> dict[str, Any]:
+    meal_summaries = []
+    for meal in meals:
+        nutrients, missing = calculate_meal_nutrition(
+            meal["ingredients"], servings=meal.get("servings", 1)
+        )
+        meal_summaries.append(
+            {
+                "name": meal["name"],
+                "meal_type": meal["meal_type"],
+                "calories": (
+                    None
+                    if missing or not meal["ingredients"]
+                    else nutrients["calories"]
+                ),
+            }
+        )
     return {
         "plan": plan,
+        "meals": meal_summaries,
         "shopping_list": generate_shopping_list(plan, meals, household_servings),
         "nutrition": calculate_week_nutrition(plan, meals, target_kcal),
         "food_search": food_search,

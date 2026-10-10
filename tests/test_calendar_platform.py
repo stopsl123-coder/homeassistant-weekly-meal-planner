@@ -30,6 +30,29 @@ async def test_weekly_plan_is_available_in_home_assistant_calendar(hass) -> None
     ]
     database = coordinator.database
     week_start = monday_for(dt_util.now().date())
+    for name, meal_type, calories in (
+        ("Gemüsesuppe", "lunch", 100),
+        ("Linsencurry", "dinner", 200),
+        ("Salat", "lunch", 50),
+    ):
+        await hass.async_add_executor_job(
+            database.add_meal,
+            name,
+            meal_type,
+            1,
+            {
+                name: {
+                    "amount": 100,
+                    "unit": "g",
+                    "nutrition_per_100g": {
+                        "calories": calories,
+                        "protein": 2,
+                        "fat": 1,
+                        "carbs": 10,
+                    },
+                }
+            },
+        )
     plan = {
         week_start.isoformat(): {
             "lunch": "Gemüsesuppe",
@@ -53,9 +76,31 @@ async def test_weekly_plan_is_available_in_home_assistant_calendar(hass) -> None
     assert events[0].start == week_start
     assert events[0].end == week_start + timedelta(days=1)
     assert "Mittagessen: Gemüsesuppe" in events[0].summary
+    assert "100 kcal pro Portion" in events[0].summary
     assert "Abendessen: Linsencurry" in events[0].summary
+    await hass.services.async_call(
+        DOMAIN,
+        "set_planned_meal",
+        {
+            "day": week_start.isoformat(),
+            "meal_type": "lunch",
+            "meal_name": "Salat",
+        },
+        blocking=True,
+    )
+    updated_plan = await hass.async_add_executor_job(
+        database.get_week_plan, week_start.isoformat()
+    )
+    assert updated_plan[week_start.isoformat()]["lunch"] == "Salat"
+    await coordinator.async_request_refresh()
+    assert coordinator.data["nutrition"]["per_day"][week_start.isoformat()] == 250
+    events = await calendar.async_get_events(
+        hass, start, start + timedelta(days=7)
+    )
+    assert "Mittagessen: Salat (50 kcal pro Portion)" in events[0].summary
     assert hass.states.get("calendar.weekly_meal_planner") is not None
     assert hass.services.has_service(DOMAIN, "search_ingredient")
+    assert hass.services.has_service(DOMAIN, "set_planned_meal")
 
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()

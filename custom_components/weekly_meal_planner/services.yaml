@@ -39,3 +39,16 @@ search_ingredient:
 
 generate_week_plan:
   description: Plant verfügbare Lunch- und Dinner-Rezepte für die aktuelle Woche.
+
+set_planned_meal:
+  description: Tauscht ein geplantes Gericht in der aktuellen Woche aus.
+  fields:
+    day:
+      description: Datum des geplanten Tages im Format YYYY-MM-DD
+      example: "2026-10-12"
+    meal_type:
+      description: Geplanter Mahlzeitentyp
+      example: "lunch"
+    meal_name:
+      description: Name eines gespeicherten Gerichts desselben Mahlzeitentyps
+      example: "Gemüsesuppe"

@@ -250,6 +250,17 @@ class MealPlannerDatabase:
                 ],
             )
 
+    def set_planned_meal(self, day: str, meal_type: str, meal_name: str) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE week_plan SET meal_name = ?
+                WHERE day = ? AND meal_type = ?
+                """,
+                (meal_name, day, meal_type),
+            )
+        return cursor.rowcount == 1
+
     def get_week_plan(self, week_start: str) -> dict[str, dict[str, str]]:
         with self._connect() as connection:
             rows = connection.execute(

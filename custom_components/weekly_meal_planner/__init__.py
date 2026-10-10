@@ -36,6 +36,7 @@ SERVICE_NAMES = (
     "generate_week_plan",
     "generate_shopping_list",
     "search_ingredient",
+    "set_planned_meal",
 )
 MEAL_TYPES = {"breakfast", "lunch", "dinner"}
 CONFIG_SCHEMA = vol.Schema(
@@ -175,6 +176,17 @@ SEARCH_INGREDIENT_SCHEMA = vol.Schema(
     {
         vol.Required("query"): vol.All(str, str.strip, vol.Length(min=1, max=100)),
         vol.Optional("force_refresh", default=False): cv.boolean,
+    }
+)
+SET_PLANNED_MEAL_SCHEMA = vol.Schema(
+    {
+        vol.Required("day"): vol.All(
+            str, vol.Length(min=10, max=10)
+        ),
+        vol.Required("meal_type"): vol.In({"lunch", "dinner"}),
+        vol.Required("meal_name"): vol.All(
+            str, str.strip, vol.Length(min=1, max=100)
+        ),
     }
 )
 
@@ -349,6 +361,44 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
     async def handle_generate_shopping_list(call: ServiceCall) -> None:
         await coordinator.async_request_refresh()
 
+    async def handle_set_planned_meal(call: ServiceCall) -> None:
+        try:
+            day = date.fromisoformat(call.data["day"])
+        except ValueError as err:
+            raise HomeAssistantError("Ungültiges Datum für den Wochenplan.") from err
+        if day.isoformat() != call.data["day"]:
+            raise HomeAssistantError("Datum muss das Format YYYY-MM-DD haben.")
+
+        week_start = monday_for(dt_util.now().date())
+        if monday_for(day) != week_start:
+            raise HomeAssistantError(
+                "Du kannst nur Gerichte der aktuellen Woche ändern."
+            )
+
+        meal = await hass.async_add_executor_job(
+            database.get_meal, call.data["meal_name"]
+        )
+        if meal is None:
+            raise HomeAssistantError(
+                f"Gericht „{call.data['meal_name']}“ wurde nicht gefunden."
+            )
+        if meal["meal_type"] != call.data["meal_type"]:
+            raise HomeAssistantError(
+                "Gericht passt nicht zur ausgewählten Mahlzeit."
+            )
+
+        updated = await hass.async_add_executor_job(
+            database.set_planned_meal,
+            day.isoformat(),
+            call.data["meal_type"],
+            meal["name"],
+        )
+        if not updated:
+            raise HomeAssistantError(
+                "Für diesen Tag ist noch kein entsprechendes Gericht eingeplant."
+            )
+        await coordinator.async_request_refresh()
+
     hass.services.async_register(
         DOMAIN, "add_meal", handle_add_meal, schema=ADD_MEAL_SCHEMA
     )
@@ -363,6 +413,12 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
         "generate_shopping_list",
         handle_generate_shopping_list,
         schema=EMPTY_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "set_planned_meal",
+        handle_set_planned_meal,
+        schema=SET_PLANNED_MEAL_SCHEMA,
     )
     hass.services.async_register(
         DOMAIN,

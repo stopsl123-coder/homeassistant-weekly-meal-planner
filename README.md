@@ -13,6 +13,8 @@ Abendessen, Berechnen von Nährwerten und Erstellen einer Einkaufsliste.
   Mittag- und Abendessen.
 - Einkaufsmenge wird nur bei kompatiblen Einheiten umgerechnet und summiert.
 - Lovelace-Karte zum Eingeben von Rezepten und Ausführen der Planer-Aktionen.
+- Geplante Gerichte in der Wochenübersicht austauschen und kcal pro Portion
+  neben Mahlzeiten anzeigen.
 
 Beim Speichern werden Zutatenbezeichnungen an USDA FoodData Central gesendet.
 Ein gültiger API-Schlüssel und Internetzugang sind dafür erforderlich.
@@ -94,6 +96,9 @@ Zutatenmengen beschreiben Gesamtmengen für `servings` Rezeptportionen
 (`servings` ist standardmäßig 1). Nährwerte werden pro Portion berechnet.
 `weekly_meal_planner.generate_week_plan` verteilt gespeicherte Mittags- und
 Abendessen-Rezepte auf die aktuelle Woche von Montag bis Sonntag.
+Geplante Mahlzeiten lassen sich in der Lovelace-Karte je Tag austauschen;
+`weekly_meal_planner.set_planned_meal` ist der zugehörige Service. kcal pro
+Portion ergeben sich aus der Summe der Zutaten-Nährwerte.
 `weekly_meal_planner.generate_shopping_list` aktualisiert Einkaufslisten- und
 Nährwertsensoren.
 

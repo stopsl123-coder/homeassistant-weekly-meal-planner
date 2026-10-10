@@ -63,9 +63,17 @@ class WeeklyMealPlannerCard extends HTMLElement {
     this._nutritionSearchSubscription = undefined;
   }
 
+  setPlanStatus(message, isError = false) {
+    const status = this.querySelector("#status");
+    if (!status) return;
+    status.textContent = message;
+    status.style.color = isError ? "var(--error-color)" : "";
+  }
+
   updateDashboard() {
     const state = this._hass?.states["sensor.weekly_meal_planner_calories"];
     const plan = state?.attributes.plan || {};
+    const recipes = state?.attributes.meals || [];
     const container = this.querySelector("#week_plan");
     if (!container) return;
 
@@ -80,7 +88,7 @@ class WeeklyMealPlannerCard extends HTMLElement {
       return;
     }
 
-    for (const [day, meals] of entries) {
+    for (const [day, plannedMeals] of entries) {
       const section = document.createElement("section");
       section.className = "week-day";
       const heading = document.createElement("h4");
@@ -90,14 +98,59 @@ class WeeklyMealPlannerCard extends HTMLElement {
         month: "short",
       }).format(new Date(`${day}T12:00:00`));
       section.appendChild(heading);
-      for (const [mealType, mealName] of Object.entries(meals)) {
-        const line = document.createElement("div");
+      for (const [mealType, mealName] of Object.entries(plannedMeals)) {
+        const line = document.createElement("label");
+        line.className = "planned-meal";
         const label = {
           breakfast: "Frühstück",
           lunch: "Mittagessen",
           dinner: "Abendessen",
         }[mealType] || mealType;
-        line.textContent = `${label}: ${mealName}`;
+        const labelText = document.createElement("span");
+        labelText.textContent = `${label}:`;
+        const select = document.createElement("select");
+        select.setAttribute("aria-label", `${label} am ${day}`);
+        const candidates = recipes.filter((meal) => meal.meal_type === mealType);
+        if (!candidates.some((meal) => meal.name === mealName)) {
+          candidates.push({
+            name: mealName,
+            meal_type: mealType,
+            calories: null,
+          });
+        }
+        for (const meal of candidates) {
+          const option = document.createElement("option");
+          option.value = meal.name;
+          option.textContent = meal.name;
+          select.appendChild(option);
+        }
+        select.value = mealName;
+        const nutrition = recipes.find((meal) => meal.name === mealName);
+        const calories = document.createElement("span");
+        calories.textContent =
+          nutrition?.calories == null
+            ? "Kalorien unbekannt"
+            : `${Math.round(nutrition.calories)} kcal pro Portion`;
+        select.addEventListener("change", async () => {
+          select.disabled = true;
+          try {
+            await this._hass.callService(
+              "weekly_meal_planner",
+              "set_planned_meal",
+              { day, meal_type: mealType, meal_name: select.value },
+            );
+            this.setPlanStatus(`${label} am ${day} wurde geändert.`);
+          } catch (error) {
+            select.value = mealName;
+            this.setPlanStatus(
+              error.message || "Gericht konnte nicht geändert werden.",
+              true,
+            );
+          } finally {
+            select.disabled = false;
+          }
+        });
+        line.append(labelText, select, calories);
         section.appendChild(line);
       }
       container.appendChild(section);
@@ -187,6 +240,9 @@ class WeeklyMealPlannerCard extends HTMLElement {
         .week-plan { display: grid; gap: 8px; margin-bottom: 16px; }
         .week-day { padding: 8px; border: 1px solid var(--divider-color); border-radius: 6px; }
         .week-day h4 { margin: 0 0 4px; }
+        .planned-meal { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 4px 0; }
+        .planned-meal select { flex: 1; min-width: 140px; }
+        .planned-meal span:last-child { color: var(--secondary-text-color); }
         .meal-planner-status { min-height: 1.5em; }
       </style>
 

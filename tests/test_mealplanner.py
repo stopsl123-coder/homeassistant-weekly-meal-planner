@@ -20,6 +20,7 @@ sys.modules[PACKAGE_NAME] = test_package
 
 from weekly_meal_planner_test_package.database import MealPlannerDatabase
 from weekly_meal_planner_test_package.mealplanner import (
+    build_dashboard_data,
     calculate_meal_nutrition,
     calculate_week_nutrition,
     generate_shopping_list,
@@ -100,6 +101,23 @@ class MealPlannerDatabaseTests(unittest.TestCase):
             {"Curry": 1},
         )
 
+    def test_planned_meal_can_be_replaced_for_one_day(self) -> None:
+        self.database.replace_week_plan(
+            "2026-10-05",
+            {"2026-10-05": {"lunch": "Soup", "dinner": "Curry"}},
+        )
+
+        self.assertTrue(
+            self.database.set_planned_meal("2026-10-05", "lunch", "Salad")
+        )
+        self.assertFalse(
+            self.database.set_planned_meal("2026-10-06", "lunch", "Salad")
+        )
+        self.assertEqual(
+            self.database.get_week_plan("2026-10-05")["2026-10-05"],
+            {"lunch": "Salad", "dinner": "Curry"},
+        )
+
     def test_legacy_database_adds_servings_without_losing_recipe_data(self) -> None:
         legacy_path = str(Path(self.temp_dir.name) / "legacy.db")
         connection = sqlite3.connect(legacy_path)
@@ -167,6 +185,38 @@ class MealPlannerDatabaseTests(unittest.TestCase):
 
 
 class MealPlannerLogicTests(unittest.TestCase):
+    def test_dashboard_includes_per_portion_calories_for_each_recipe(self) -> None:
+        dashboard = build_dashboard_data(
+            {"2026-10-05": {"lunch": "Soup"}},
+            [
+                {
+                    "name": "Soup",
+                    "meal_type": "lunch",
+                    "servings": 2,
+                    "ingredients": {
+                        "Beans": {
+                            "amount": 200,
+                            "unit": "g",
+                            "nutrition_per_100g": {
+                                "calories": 80,
+                                "protein": 5,
+                                "fat": 1,
+                                "carbs": 12,
+                            },
+                        }
+                    },
+                }
+            ],
+            household_servings=2,
+            target_kcal=2000,
+            food_search={"query": "", "results": []},
+        )
+
+        self.assertEqual(
+            dashboard["meals"],
+            [{"name": "Soup", "meal_type": "lunch", "calories": 80}],
+        )
+
     def test_plan_fills_week_from_available_lunch_and_dinner_recipes(self) -> None:
         meals = [
             {"name": "Soup", "meal_type": "lunch", "ingredients": {}},
