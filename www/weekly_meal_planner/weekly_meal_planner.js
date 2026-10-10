@@ -92,6 +92,7 @@ class WeeklyMealPlannerCard extends HTMLElement {
     const dialog = this.querySelector("#meal_dialog");
     const select = this.querySelector("#meal_choice");
     const save = this.querySelector("#save_planned_meal");
+    const deleteButton = this.querySelector("#delete_meal");
     const empty = this.querySelector("#meal_choice_empty");
     this.querySelector("#meal_dialog_title").textContent =
       `${labels[mealType]} · ${new Intl.DateTimeFormat("de-DE", {
@@ -124,11 +125,15 @@ class WeeklyMealPlannerCard extends HTMLElement {
     }
     select.value = mealName || select.options[0]?.value || "";
     save.disabled = !select.value;
+    deleteButton.disabled = !recipes.some((recipe) => recipe.name === select.value);
     empty.hidden = candidates.length > 0;
     empty.textContent = `Noch keine gespeicherten Gerichte für ${labels[mealType]}.`;
     this.querySelector("#meal_dialog_status").textContent = "";
     select.onchange = () => {
       save.disabled = !select.value;
+      deleteButton.disabled = !recipes.some(
+        (recipe) => recipe.name === select.value,
+      );
     };
     dialog.showModal();
   }
@@ -160,6 +165,31 @@ class WeeklyMealPlannerCard extends HTMLElement {
     }
   }
 
+  async deleteMeal(mealName) {
+    if (!mealName) return;
+    if (
+      !window.confirm(
+        `„${mealName}“ wirklich löschen? Es wird auch aus allen Wochenplan-Tagen entfernt.`,
+      )
+    ) {
+      return;
+    }
+
+    const button = this.querySelector("#delete_meal");
+    button.disabled = true;
+    try {
+      await this._hass.callService("weekly_meal_planner", "delete_meal", {
+        name: mealName,
+      });
+      this.querySelector("#meal_dialog").close();
+      this.setPlanStatus(`„${mealName}“ wurde gelöscht.`);
+    } catch (error) {
+      this.setPlanStatus(error.message || "Gericht konnte nicht gelöscht werden.", true);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
   openRecipeDialog(mealType, day = undefined) {
     const dialog = this.querySelector("#recipe_dialog");
     const typeSelect = this.querySelector("#meal_type");
@@ -175,6 +205,7 @@ class WeeklyMealPlannerCard extends HTMLElement {
     const state = this._hass?.states["sensor.weekly_meal_planner_calories"];
     const plan = state?.attributes.plan || {};
     const recipes = state?.attributes.meals || [];
+    const dailyCalories = state?.attributes.per_day || {};
     const days = state?.attributes.week_days || Object.keys(plan);
     const container = this.querySelector("#week_plan");
     if (!container) return;
@@ -198,6 +229,16 @@ class WeeklyMealPlannerCard extends HTMLElement {
         month: "short",
       }).format(new Date(`${day}T12:00:00`));
       section.appendChild(heading);
+      const dailyTotal = document.createElement("small");
+      dailyTotal.className = "day-calories";
+      const calories = dailyCalories[day];
+      dailyTotal.textContent =
+        calories == null
+          ? Object.keys(plannedMeals).length
+            ? "Tagesgesamt: unvollständig"
+            : "0 kcal gesamt"
+          : `${Math.round(calories)} kcal gesamt`;
+      section.appendChild(dailyTotal);
       for (const mealType of ["breakfast", "lunch", "dinner"]) {
         const recipeName = plannedMeals[mealType];
         const recipe = recipes.find((item) => item.name === recipeName);
@@ -327,6 +368,7 @@ class WeeklyMealPlannerCard extends HTMLElement {
         .week-plan { display: grid; grid-template-columns: repeat(7, minmax(112px, 1fr)); min-width: 840px; gap: 10px; margin-bottom: 14px; }
         .week-day { display: flex; min-width: 0; flex-direction: column; padding: 10px; border: 1px solid var(--divider-color); border-radius: 18px; background: var(--secondary-background-color); overflow-wrap: anywhere; }
         .week-day h4 { display: flex; min-height: 2.5em; align-items: center; margin: 0 0 4px; padding: 2px 2px 10px; border-bottom: 1px solid var(--divider-color); font-size: .86rem; font-weight: 750; line-height: 1.25; text-transform: capitalize; }
+        .day-calories { width: fit-content; margin: 2px 0 3px; padding: 4px 7px; border-radius: 999px; background: var(--primary-color); color: var(--text-primary-color, #fff); font-size: .64rem; font-weight: 750; }
         .meal-tile { display: grid; gap: 7px; width: 100%; min-height: 88px; margin-top: 8px; padding: 10px 9px; appearance: none; border: 1px solid var(--divider-color); border-radius: 13px; background: var(--ha-card-background, var(--card-background-color)); color: var(--primary-text-color); text-align: left; white-space: normal; overflow-wrap: anywhere; cursor: pointer; transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
         .meal-tile:hover { transform: translateY(-2px); border-color: var(--primary-color); box-shadow: 0 7px 18px rgba(0, 0, 0, .1); }
         .meal-tile:focus-visible, .planner-button:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
@@ -354,6 +396,7 @@ class WeeklyMealPlannerCard extends HTMLElement {
         #meal_dialog label { display: block; margin: 12px 0 6px; color: var(--secondary-text-color); font-size: .82rem; font-weight: 700; }
         #meal_dialog select { width: 100%; }
         weekly-meal-planner-card .dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+        #delete_meal { margin-right: auto; border-color: var(--error-color); color: var(--error-color); }
         .recipe-dialog-content { padding: 2px; }
         weekly-meal-planner-card #recipe_dialog .meal-form > p { color: var(--secondary-text-color); font-size: .84rem; line-height: 1.5; }
         #meal_choice_empty { padding: 12px; border-radius: 12px; background: var(--secondary-background-color); color: var(--secondary-text-color); }
@@ -397,6 +440,7 @@ class WeeklyMealPlannerCard extends HTMLElement {
           <p id="meal_choice_empty" hidden></p>
           <p id="meal_dialog_status" role="status" aria-live="polite"></p>
           <div class="dialog-actions">
+            <button id="delete_meal" type="button">Gericht löschen</button>
             <button id="new_meal_for_slot" type="button">Neues Gericht anlegen</button>
             <button id="save_planned_meal" type="button">In Wochenplan übernehmen</button>
             <button id="close_meal_dialog" type="button">Abbrechen</button>
@@ -450,6 +494,8 @@ class WeeklyMealPlannerCard extends HTMLElement {
       this.querySelector("#meal_dialog").close();
     this.querySelector("#save_planned_meal").onclick = () =>
       this.savePlannedMeal(this.querySelector("#meal_choice").value);
+    this.querySelector("#delete_meal").onclick = () =>
+      this.deleteMeal(this.querySelector("#meal_choice").value);
     this.querySelector("#close_recipe_dialog").onclick = () =>
       this.querySelector("#recipe_dialog").close();
     this.querySelector("#recipe_dialog").addEventListener("close", () => {

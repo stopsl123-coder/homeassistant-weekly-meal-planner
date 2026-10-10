@@ -43,6 +43,8 @@ Essensplan auch ohne Rezeptkarte an.
 
    ```yaml
    type: custom:weekly-meal-planner-card
+   grid_options:
+     columns: full
    ```
 
 6. Speichere Dashboard. Wenn Karte nach dem Neuladen nicht erscheint, lade
@@ -145,10 +147,16 @@ es aus einer Kachel, wird neues Gericht nach dem Speichern direkt dort
 eingeplant. Änderungen gelten nur für aktuelle Woche; nativer Kalender wird
 ebenfalls aktualisiert.
 
-Neben geplanten Gerichten stehen berechnete kcal pro Portion. Summe basiert auf
-Nährwerten aller Zutaten geteilt durch Rezeptportionen. Gerichte mit fehlenden
-Gewichtsangaben zeigen keine Kalorienzahl. Automatische Planung erzeugt
-Mittag- und Abendessen, lässt manuell geplante Frühstücke aber bestehen.
+Über die Gerichtsauswahl kannst du ein gespeichertes Gericht auch löschen.
+Nach Bestätigung wird es aus der Rezeptdatenbank und allen Wochenplan-Tagen
+entfernt.
+
+Neben geplanten Gerichten stehen berechnete kcal pro Portion; am Tag steht
+zusätzlich die Summe aller geplanten Mahlzeiten. Summe basiert auf Nährwerten
+aller Zutaten geteilt durch Rezeptportionen. Fehlen Nährwerte oder
+Gewichtsangaben, ist Tagesgesamt als unvollständig markiert. Automatische
+Planung erzeugt Mittag- und Abendessen, lässt manuell geplante Frühstücke aber
+bestehen.
 
 ## 7. Essensplan im Home-Assistant-Kalender anzeigen
 

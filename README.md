@@ -12,6 +12,8 @@ Einkaufsliste.
   Makros.
 - Eine Wochenübersicht mit Frühstücks-, Mittags- und Abendessen-Kacheln zum
   Auswählen gespeicherter Gerichte.
+- Gespeicherte Gerichte löschen und Tageskalorien aller geplanten Mahlzeiten
+  summieren.
 - Einen nativen Home-Assistant-Kalender mit einer Tagesübersicht der geplanten
   Mahlzeiten.
 - Einkaufsmenge wird nur bei kompatiblen Einheiten umgerechnet und summiert.
@@ -102,6 +104,8 @@ Abendessen-Rezepte auf die aktuelle Woche von Montag bis Sonntag.
 Geplante Mahlzeiten lassen sich in der Lovelace-Karte je Tag austauschen;
 `weekly_meal_planner.set_planned_meal` ist der zugehörige Service. kcal pro
 Portion ergeben sich aus der Summe der Zutaten-Nährwerte.
+`weekly_meal_planner.delete_meal` löscht ein Rezept und entfernt es aus allen
+gespeicherten Wochenplänen.
 `weekly_meal_planner.generate_shopping_list` aktualisiert Einkaufslisten- und
 Nährwertsensoren.
 

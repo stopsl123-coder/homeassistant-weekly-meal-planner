@@ -33,6 +33,7 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS = [Platform.SENSOR, Platform.CALENDAR]
 SERVICE_NAMES = (
     "add_meal",
+    "delete_meal",
     "generate_week_plan",
     "generate_shopping_list",
     "search_ingredient",
@@ -170,6 +171,11 @@ ADD_MEAL_SCHEMA = vol.Schema(
             vol.Coerce(int), vol.Range(min=1, max=100)
         ),
         vol.Required("ingredients"): _validate_ingredients,
+    }
+)
+DELETE_MEAL_SCHEMA = vol.Schema(
+    {
+        vol.Required("name"): vol.All(str, str.strip, vol.Length(min=1, max=100)),
     }
 )
 EMPTY_SCHEMA = vol.Schema({})
@@ -332,6 +338,16 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
         )
         await coordinator.async_refresh()
 
+    async def handle_delete_meal(call: ServiceCall) -> None:
+        deleted = await hass.async_add_executor_job(
+            database.delete_meal, call.data["name"]
+        )
+        if not deleted:
+            raise HomeAssistantError(
+                f"Gericht „{call.data['name']}“ wurde nicht gefunden."
+            )
+        await coordinator.async_refresh()
+
     async def handle_generate_week_plan(call: ServiceCall) -> None:
         meals = await hass.async_add_executor_job(database.get_meals)
         start = monday_for(dt_util.now().date())
@@ -406,6 +422,9 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
     hass.services.async_register(
         DOMAIN, "add_meal", handle_add_meal, schema=ADD_MEAL_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN, "delete_meal", handle_delete_meal, schema=DELETE_MEAL_SCHEMA
     )
     hass.services.async_register(
         DOMAIN,

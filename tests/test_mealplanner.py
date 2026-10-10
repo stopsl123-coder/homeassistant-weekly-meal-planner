@@ -75,6 +75,17 @@ class MealPlannerDatabaseTests(unittest.TestCase):
         self.assertEqual(meals[0]["servings"], 4)
         self.assertEqual(meals[0]["ingredients"]["Rice"]["amount"], 200)
 
+    def test_deleting_recipe_removes_it_from_saved_plans(self) -> None:
+        self.database.add_meal(
+            "Soup", "lunch", 1, {"Beans": {"amount": 100, "unit": "g"}}
+        )
+        self.database.set_planned_meal("2026-10-05", "lunch", "Soup")
+
+        self.assertTrue(self.database.delete_meal("Soup"))
+        self.assertIsNone(self.database.get_meal("Soup"))
+        self.assertEqual(self.database.get_week_plan("2026-10-05"), {})
+        self.assertFalse(self.database.delete_meal("Soup"))
+
     def test_week_plan_is_persisted_and_replaced_only_for_its_week(self) -> None:
         first_week = {
             "2026-10-05": {"lunch": "Soup"},
@@ -224,6 +235,47 @@ class MealPlannerLogicTests(unittest.TestCase):
             dashboard["meals"],
             [{"name": "Soup", "meal_type": "lunch", "calories": 80}],
         )
+
+    def test_daily_calorie_total_includes_all_meal_types(self) -> None:
+        nutrition = {
+            "calories": 100,
+            "protein": 10,
+            "fat": 5,
+            "carbs": 10,
+        }
+        meals = [
+            {
+                "name": name,
+                "meal_type": meal_type,
+                "servings": 1,
+                "ingredients": {
+                    name: {
+                        "amount": calories,
+                        "unit": "g",
+                        "nutrition_per_100g": nutrition,
+                    }
+                },
+            }
+            for name, meal_type, calories in (
+                ("Porridge", "breakfast", 300),
+                ("Soup", "lunch", 450),
+                ("Pasta", "dinner", 650),
+            )
+        ]
+
+        totals = calculate_week_nutrition(
+            {
+                "2026-10-05": {
+                    "breakfast": "Porridge",
+                    "lunch": "Soup",
+                    "dinner": "Pasta",
+                }
+            },
+            meals,
+            target_kcal=2000,
+        )
+
+        self.assertEqual(totals["per_day"]["2026-10-05"], 1400)
 
     def test_plan_fills_week_from_available_lunch_and_dinner_recipes(self) -> None:
         meals = [

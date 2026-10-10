@@ -24,6 +24,13 @@ add_meal:
           unit: Stück
           weight_per_unit_g: 60
 
+delete_meal:
+  description: Löscht ein gespeichertes Gericht und entfernt es aus allen Wochenplänen.
+  fields:
+    name:
+      description: Name des zu löschenden Gerichts
+      example: "Hähnchen mit Reis"
+
 generate_shopping_list:
   description: Aktualisiert Einkaufsliste und Sensoren für den aktuellen Wochenplan.
 

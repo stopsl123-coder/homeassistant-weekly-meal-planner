@@ -124,6 +124,15 @@ class MealPlannerDatabase:
             for row in rows
         ]
 
+    def delete_meal(self, name: str) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute("DELETE FROM meals WHERE name = ?", (name,))
+            if cursor.rowcount:
+                connection.execute(
+                    "DELETE FROM week_plan WHERE meal_name = ?", (name,)
+                )
+        return cursor.rowcount > 0
+
     def get_meal(self, name: str) -> dict[str, Any] | None:
         with self._connect() as connection:
             row = connection.execute(
