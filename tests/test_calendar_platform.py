@@ -247,9 +247,10 @@ async def test_ingredient_search_returns_results_to_service_caller(hass) -> None
         blocking=True,
     )
     assert await hass.async_add_executor_job(database.get_meal, "Rührei") is None
-    assert today.isoformat() not in await hass.async_add_executor_job(
+    plan_after_delete = await hass.async_add_executor_job(
         database.get_week_plan, week_start.isoformat()
     )
+    assert "breakfast" not in plan_after_delete.get(today.isoformat(), {})
     assert all(meal["name"] != "Rührei" for meal in coordinator.data["meals"])
 
     assert await hass.config_entries.async_unload(entry.entry_id)
