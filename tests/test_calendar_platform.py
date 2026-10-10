@@ -34,6 +34,7 @@ async def test_weekly_plan_is_available_in_home_assistant_calendar(hass) -> None
         ("Gemüsesuppe", "lunch", 100),
         ("Linsencurry", "dinner", 200),
         ("Salat", "lunch", 50),
+        ("Bohnensalat", "lunch", 75),
     ):
         await hass.async_add_executor_job(
             database.add_meal,
@@ -96,6 +97,22 @@ async def test_weekly_plan_is_available_in_home_assistant_calendar(hass) -> None
     )
     assert updated_plan[week_start.isoformat()]["lunch"] == "Salat"
     assert coordinator.data["nutrition"]["per_day"][week_start.isoformat()] == 250
+    next_day = (week_start + timedelta(days=1)).isoformat()
+    await hass.services.async_call(
+        DOMAIN,
+        "set_planned_meal",
+        {
+            "day": next_day,
+            "meal_type": "lunch",
+            "meal_name": "Bohnensalat",
+        },
+        blocking=True,
+    )
+    updated_plan = await hass.async_add_executor_job(
+        database.get_week_plan, week_start.isoformat()
+    )
+    assert updated_plan[week_start.isoformat()]["lunch"] == "Salat"
+    assert updated_plan[next_day]["lunch"] == "Bohnensalat"
     await hass.async_add_executor_job(
         database.add_meal,
         "Haferbrei",
