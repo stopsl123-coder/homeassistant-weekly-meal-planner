@@ -1,27 +1,78 @@
-# homeassistant-weekly-meal-planner
-Ein leistungsstarkes Home‑Assistant‑Modul zur Planung von Wochenmahlzeiten mit automatischer Einkaufslisten‑Generierung, Kalorien‑ und Makro‑Berechnung, intelligenter Wochenplanung und komfortabler UI zur Erstellung eigener Gerichte. Unterstützt Zutaten mit Einheiten, Nährwertdaten aus öffentlichen Datenbanken und flexible Ernährungsziele.
-🥗 Weekly Meal Planner – Home Assistant Custom Integration
-Der Weekly Meal Planner ist eine Home‑Assistant‑Integration zur Planung von Wochenmahlzeiten, automatischer Einkaufslisten‑Generierung und Kalorien‑/Makro‑Berechnung.
-Er unterstützt eigene Gerichte, Zutaten mit Einheiten, Nährwertdaten über die USDA‑API und eine einfache UI‑Card zur Verwaltung deiner Mahlzeiten.
+# Weekly Meal Planner
 
-Diese Integration ist vollständig lokal, offline‑fähig und kann über HACS als Custom Repository installiert werden.
+Home-Assistant-Integration zum Speichern von Rezepten, Planen von Mittag- und
+Abendessen, Berechnen von Nährwerten und Erstellen einer Einkaufsliste.
 
-🚀 Features
-🗓️ Automatische Wochenplanung (Lunch/Dinner)
+## Funktionen
 
-🛒 Automatische Einkaufslisten‑Generierung
+- Rezepte und Wochenpläne in `/config/mealplanner.db`.
+- Nährwertabfrage bei USDA FoodData Central beim Speichern eines Rezepts.
+- Sensoren für Anzahl der Einkaufslistenpositionen sowie Wochenkalorien und
+  Makros.
+- Einkaufsmenge wird nur bei kompatiblen Einheiten umgerechnet und summiert.
+- Lovelace-Karte zum Eingeben von Rezepten und Ausführen der Planer-Aktionen.
 
-🔥 Kalorien‑Berechnung pro Gericht & pro Woche
+Beim Speichern werden Zutatenbezeichnungen an USDA FoodData Central gesendet.
+Ein gültiger API-Schlüssel und Internetzugang sind dafür erforderlich.
+Nährwertsummen bleiben unbekannt, wenn Zutatenmenge nicht in Gewicht
+umgerechnet werden kann oder Nährwerte fehlen. Volumen wird nicht pauschal mit
+Gewicht gleichgesetzt.
 
-🍗 Zutatenverwaltung mit Mengen & Einheiten
+## Installation
 
-📦 SQLite‑Datenbank für eigene Gerichte
+1. Dieses Repository in HACS als benutzerdefinierte **Integration** installieren.
+2. Home Assistant neu starten und **Weekly Meal Planner** unter Einstellungen >
+   Geräte & Dienste hinzufügen.
+3. USDA-FoodData-Central-API-Schlüssel eingeben. Schlüssel gibt es unter
+   <https://fdc.nal.usda.gov/api-key-signup.html>.
+4. `www/weekly_meal_planner/weekly_meal_planner.js` nach `/config/www/` als
+   `weekly_meal_planner.js` kopieren.
+5. `/local/weekly_meal_planner.js` als JavaScript-Modul-Dashboard-Ressource
+   registrieren und diese Karte hinzufügen:
 
-🌐 USDA FoodData Central API‑Support  
-→ Kalorien, Protein, Fett, Kohlenhydrate pro Lebensmittel
+   ```yaml
+   type: custom:weekly-meal-planner-card
+   ```
 
-🧩 Lovelace Custom Card zur Eingabe neuer Gerichte
+Die Karte speichert Rezepte, erstellt Wochenpläne und aktualisiert den
+Einkaufslisten-Sensor. Die Integration erstellt
+`sensor.weekly_meal_planner_shopping_list` und
+`sensor.weekly_meal_planner_calories`.
 
-🛠️ Mehrere Home‑Assistant‑Services
+Eine vorhandene YAML-Konfiguration mit `weekly_meal_planner: api_key:` wird
+automatisch in einen Config-Entry importiert. Den YAML-Block nach dem Neustart
+entfernen.
 
-📊 Sensoren für Einkaufsliste & Kalorienübersicht
+## Services
+
+`weekly_meal_planner.add_meal` erwartet Rezeptname, Mahlzeitentyp
+(`breakfast`, `lunch` oder `dinner`) und Zutaten:
+
+```yaml
+name: Hähnchen mit Reis
+meal_type: dinner
+ingredients:
+  Hähnchen:
+    amount: 200
+    unit: g
+  Reis:
+    amount: 150
+    unit: g
+```
+
+Zutatenmengen gelten jeweils für eine geplante Portion.
+`weekly_meal_planner.generate_week_plan` verteilt gespeicherte Mittags- und
+Abendessen-Rezepte auf die aktuelle Woche von Montag bis Sonntag.
+`weekly_meal_planner.generate_shopping_list` aktualisiert Einkaufslisten- und
+Nährwertsensoren.
+
+## Entwicklung
+
+Tests ausführen:
+
+```sh
+python -m unittest discover -s tests -v
+```
+
+GitHub Actions kompiliert die Integration und führt diese Tests bei Pushes und
+Pull Requests aus.

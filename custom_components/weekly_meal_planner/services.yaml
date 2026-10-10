@@ -1,5 +1,5 @@
 add_meal:
-  description: Fügt ein neues Gericht zur Datenbank hinzu
+  description: Speichert Gericht und USDA-Nährwerte pro 100 g.
   fields:
     name:
       description: Name des Gerichts
@@ -8,11 +8,17 @@ add_meal:
       description: Art der Mahlzeit
       example: "lunch"
     ingredients:
-      description: Zutaten als JSON
-      example: '{"Hähnchen": {"amount": 200, "unit": "g"}, "Reis": {"amount": 150, "unit": "g"}}'
+      description: Zutaten mit positiver Menge und Einheit
+      example:
+        Hähnchen:
+          amount: 200
+          unit: g
+        Reis:
+          amount: 150
+          unit: g
 
 generate_shopping_list:
-  description: Generiert die Einkaufsliste
+  description: Aktualisiert Einkaufsliste und Sensoren für den aktuellen Wochenplan.
 
 generate_week_plan:
-  description: Erzeugt einen einfachen Wochenplan nach Kalorienziel
+  description: Plant verfügbare Lunch- und Dinner-Rezepte für die aktuelle Woche.

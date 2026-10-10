@@ -3,11 +3,14 @@
     "step": {
       "user": {
         "title": "Weekly Meal Planner",
-        "description": "Bitte gib deinen USDA FoodData Central API-Key ein."
+        "description": "Gib deinen USDA-FoodData-Central-API-Schlüssel ein. Er wird beim Speichern für Nährwertabfragen verwendet."
       }
     },
     "error": {
       "no_api_key": "API-Key darf nicht leer sein."
     }
+  },
+  "abort": {
+    "no_api_key": "In der importierten YAML-Konfiguration fehlt der API-Schlüssel."
   }
 }
