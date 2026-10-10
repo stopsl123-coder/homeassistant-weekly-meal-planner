@@ -12,6 +12,9 @@ class WeeklyMealPlannerCard extends HTMLElement {
       this.render();
       this.rendered = true;
     }
+    if (!this._selectedWeekStart) {
+      this._selectedWeekStart = this._currentWeekStart();
+    }
     this.updateDashboard();
     this.updateNutritionSearchResults();
   }
@@ -80,6 +83,65 @@ class WeeklyMealPlannerCard extends HTMLElement {
       dialogStatus.textContent = message;
       dialogStatus.style.color = isError ? "var(--error-color)" : "";
     }
+  }
+
+  _currentWeekStart() {
+    const attributes =
+      this._hass?.states["sensor.weekly_meal_planner_calories"]?.attributes || {};
+    if (attributes.week_start || attributes.week_days?.[0]) {
+      return attributes.week_start || attributes.week_days[0];
+    }
+    const today = new Date();
+    today.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  }
+
+  _addWeek(weekStart, weeks) {
+    const date = new Date(`${weekStart}T00:00:00Z`);
+    date.setUTCDate(date.getUTCDate() + weeks * 7);
+    return date.toISOString().slice(0, 10);
+  }
+
+  async loadWeekData(weekStart = this._selectedWeekStart) {
+    this._selectedWeekStart = weekStart;
+    this._weekData = undefined;
+    this._weekLoadError = false;
+    this.updateDashboard();
+    try {
+      const result = await this._hass.callService(
+        "weekly_meal_planner",
+        "get_week_data",
+        { week_start: weekStart },
+        undefined,
+        false,
+        true,
+      );
+      this._weekData = result?.response;
+      if (!this._weekData) {
+        throw new Error("Wochenplan konnte nicht geladen werden.");
+      }
+      this.updateDashboard();
+      return true;
+    } catch (error) {
+      this._weekLoadError = true;
+      this.updateDashboard();
+      this.setPlanStatus(error.message || "Wochenplan konnte nicht geladen werden.", true);
+      return false;
+    }
+  }
+
+  async changeWeek(offset) {
+    const currentWeek = this._currentWeekStart();
+    const nextWeek = this._addWeek(currentWeek, 1);
+    const target = this._addWeek(this._selectedWeekStart || currentWeek, offset);
+    if (target !== currentWeek && target !== nextWeek) return;
+    this._selectedWeekStart = target;
+    if (target === currentWeek) {
+      this._weekData = undefined;
+      this.updateDashboard();
+      return;
+    }
+    await this.loadWeekData(target);
   }
 
   openMealDialog(day, mealType, mealName, recipes) {
@@ -155,6 +217,9 @@ class WeeklyMealPlannerCard extends HTMLElement {
       });
       this.querySelector("#meal_dialog").close();
       this.setPlanStatus("Gericht wurde im Wochenplan gespeichert.");
+      if (mondayOf(slot.day) !== this._currentWeekStart()) {
+        await this.loadWeekData(this._selectedWeekStart);
+      }
     } catch (error) {
       this.setPlanStatus(
         error.message || "Gericht konnte nicht gespeichert werden.",
@@ -183,6 +248,7 @@ class WeeklyMealPlannerCard extends HTMLElement {
       });
       this.querySelector("#meal_dialog").close();
       this.setPlanStatus(`„${mealName}“ wurde gelöscht.`);
+      await this.loadWeekData(this._selectedWeekStart);
     } catch (error) {
       this.setPlanStatus(error.message || "Gericht konnte nicht gelöscht werden.", true);
     } finally {
@@ -203,14 +269,54 @@ class WeeklyMealPlannerCard extends HTMLElement {
 
   updateDashboard() {
     const state = this._hass?.states["sensor.weekly_meal_planner_calories"];
-    const plan = state?.attributes.plan || {};
-    const recipes = state?.attributes.meals || [];
-    const dailyCalories = state?.attributes.per_day || {};
-    const days = state?.attributes.week_days || Object.keys(plan);
+    const attributes = state?.attributes || {};
+    const currentWeek = this._currentWeekStart();
+    const selectedWeek = this._selectedWeekStart || currentWeek;
+    const weekData =
+      selectedWeek === currentWeek ? attributes : this._weekData || {};
+    const plan = weekData.plan || {};
+    const recipes = weekData.meals || [];
+    const dailyCalories =
+      weekData.per_day || weekData.nutrition?.per_day || {};
+    const days = weekData.week_days || Object.keys(plan);
     const container = this.querySelector("#week_plan");
     if (!container) return;
 
+    const weekLabel = this.querySelector("#selected_week_label");
+    const weekStartDate = new Date(`${selectedWeek}T12:00:00`);
+    const weekEndDate = new Date(`${this._addWeek(selectedWeek, 1)}T12:00:00`);
+    weekEndDate.setDate(weekEndDate.getDate() - 1);
+    const dateFormatter = new Intl.DateTimeFormat("de-DE", {
+      day: "numeric",
+      month: "short",
+    });
+    weekLabel.textContent =
+      selectedWeek === currentWeek
+        ? `Aktuelle Woche · ${dateFormatter.format(weekStartDate)}–${dateFormatter.format(weekEndDate)}`
+        : `Nächste Woche · ${dateFormatter.format(weekStartDate)}–${dateFormatter.format(weekEndDate)}`;
+    this.querySelector("#previous_week").disabled = selectedWeek === currentWeek;
+    this.querySelector("#next_week").disabled =
+      selectedWeek === this._addWeek(currentWeek, 1);
+    this.querySelector("#auto_plan").textContent =
+      selectedWeek === currentWeek
+        ? "Diese Woche automatisch planen"
+        : "Nächste Woche automatisch planen";
+
     container.replaceChildren();
+    if (selectedWeek !== currentWeek && !this._weekData) {
+      const loading = document.createElement("p");
+      loading.textContent = this._weekLoadError
+        ? "Wochenplan konnte nicht geladen werden."
+        : "Wochenplan wird geladen.";
+      container.appendChild(loading);
+      this.querySelector("#shopping_items").replaceChildren();
+      const shoppingEmpty = this.querySelector("#shopping_empty");
+      shoppingEmpty.hidden = false;
+      shoppingEmpty.textContent = this._weekLoadError
+        ? "Einkaufsliste konnte nicht geladen werden."
+        : "Einkaufsliste wird geladen.";
+      return;
+    }
     if (!days.length) {
       const empty = document.createElement("p");
       empty.textContent = "Wochenplan wird geladen.";
@@ -272,6 +378,33 @@ class WeeklyMealPlannerCard extends HTMLElement {
         section.appendChild(tile);
       }
       container.appendChild(section);
+    }
+    const shoppingList =
+      selectedWeek === currentWeek
+        ? this._hass?.states["sensor.weekly_meal_planner_shopping_list"]?.attributes.items
+        : weekData.shopping_list;
+    this.renderShoppingList(shoppingList || {});
+  }
+
+  renderShoppingList(items) {
+    const list = this.querySelector("#shopping_items");
+    const empty = this.querySelector("#shopping_empty");
+    list.replaceChildren();
+    const entries = Object.entries(items || {}).sort(([left], [right]) =>
+      left.localeCompare(right, "de"),
+    );
+    empty.hidden = entries.length > 0;
+    empty.textContent = entries.length
+      ? ""
+      : "Für diese Woche sind noch keine Gerichte eingeplant.";
+    for (const [name, details] of entries) {
+      const item = document.createElement("li");
+      const label = document.createElement("span");
+      label.textContent = name;
+      const amount = document.createElement("strong");
+      amount.textContent = `${Number(details.amount).toLocaleString("de-DE")} ${details.unit}`;
+      item.append(label, amount);
+      list.appendChild(item);
     }
   }
 
@@ -362,6 +495,11 @@ class WeeklyMealPlannerCard extends HTMLElement {
         .planner-eyebrow { margin: 0 0 6px; color: var(--primary-color); font-size: .72rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
         .planner-title { margin: 0; font-size: clamp(1.45rem, 2vw, 2rem); font-weight: 750; letter-spacing: -.035em; line-height: 1.15; }
         .planner-description { margin: 8px 0 0; color: var(--secondary-text-color); font-size: .92rem; }
+        .week-navigation { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 20px 0 8px; }
+        .week-navigation h3 { margin: 0; font-size: 1rem; font-weight: 750; }
+        .week-navigation-actions { display: flex; gap: 8px; }
+        .week-navigation-actions button { min-width: 40px; min-height: 38px; border: 1px solid var(--divider-color); border-radius: 11px; background: var(--secondary-background-color); color: var(--primary-text-color); font: inherit; font-weight: 700; cursor: pointer; }
+        .week-navigation-actions button:disabled { opacity: .45; cursor: default; }
         .week-count { flex: 0 0 auto; padding: 8px 12px; border: 1px solid var(--divider-color); border-radius: 999px; background: var(--secondary-background-color); color: var(--secondary-text-color); font-size: .8rem; font-weight: 700; }
         .week-plan-viewport { overflow-x: auto; padding: 2px 2px 10px; scrollbar-width: thin; }
         .week-plan-viewport:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
@@ -369,6 +507,12 @@ class WeeklyMealPlannerCard extends HTMLElement {
         .week-day { display: flex; min-width: 0; flex-direction: column; padding: 10px; border: 1px solid var(--divider-color); border-radius: 18px; background: var(--secondary-background-color); overflow-wrap: anywhere; }
         .week-day h4 { display: flex; min-height: 2.5em; align-items: center; margin: 0 0 4px; padding: 2px 2px 10px; border-bottom: 1px solid var(--divider-color); font-size: .86rem; font-weight: 750; line-height: 1.25; text-transform: capitalize; }
         .day-calories { width: fit-content; margin: 2px 0 3px; padding: 4px 7px; border-radius: 999px; background: var(--primary-color); color: var(--text-primary-color, #fff); font-size: .64rem; font-weight: 750; }
+        .shopping-preview { margin-top: 22px; padding: 18px; border: 1px solid var(--divider-color); border-radius: 18px; background: var(--secondary-background-color); }
+        .shopping-preview header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+        .shopping-preview h3 { margin: 0; font-size: 1rem; }
+        .shopping-preview ul { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 18px; margin: 0; padding: 0; list-style: none; }
+        .shopping-preview li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--divider-color); font-size: .88rem; }
+        .shopping-empty { color: var(--secondary-text-color); font-size: .88rem; }
         .meal-tile { display: grid; gap: 7px; width: 100%; min-height: 88px; margin-top: 8px; padding: 10px 9px; appearance: none; border: 1px solid var(--divider-color); border-radius: 13px; background: var(--ha-card-background, var(--card-background-color)); color: var(--primary-text-color); text-align: left; white-space: normal; overflow-wrap: anywhere; cursor: pointer; transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
         .meal-tile:hover { transform: translateY(-2px); border-color: var(--primary-color); box-shadow: 0 7px 18px rgba(0, 0, 0, .1); }
         .meal-tile:focus-visible, .planner-button:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
@@ -423,13 +567,27 @@ class WeeklyMealPlannerCard extends HTMLElement {
             </div>
             <span class="week-count">7 Tage</span>
           </header>
+          <div class="week-navigation">
+            <h3 id="selected_week_label">Aktuelle Woche</h3>
+            <div class="week-navigation-actions">
+              <button id="previous_week" type="button" aria-label="Aktuelle Woche anzeigen">‹</button>
+              <button id="next_week" type="button" aria-label="Nächste Woche anzeigen">›</button>
+            </div>
+          </div>
           <div class="week-plan-viewport" role="region" aria-label="Wochenübersicht" tabindex="0">
             <div id="week_plan" class="week-plan"></div>
           </div>
+          <section class="shopping-preview" aria-label="Einkaufsliste für ausgewählte Woche">
+            <header>
+              <h3>Einkaufsliste</h3>
+              <button id="refresh_week_data" class="planner-button" type="button">Aktualisieren</button>
+            </header>
+            <ul id="shopping_items"></ul>
+            <p id="shopping_empty" class="shopping-empty" hidden></p>
+          </section>
           <div class="planner-actions">
             <button id="new_meal" class="planner-button" type="button">Neues Gericht</button>
-            <button id="auto_plan" class="planner-button primary" type="button">Woche automatisch planen</button>
-            <button id="regen_list" class="planner-button" type="button">Einkaufsliste aktualisieren</button>
+            <button id="auto_plan" class="planner-button primary" type="button">Diese Woche automatisch planen</button>
           </div>
           <p id="status" class="meal-planner-status" role="status" aria-live="polite"></p>
         </div>
@@ -486,6 +644,10 @@ class WeeklyMealPlannerCard extends HTMLElement {
 
     this.querySelector("#new_meal").onclick = () =>
       this.openRecipeDialog(this.querySelector("#meal_type").value);
+    this.querySelector("#previous_week").onclick = () => this.changeWeek(-1);
+    this.querySelector("#next_week").onclick = () => this.changeWeek(1);
+    this.querySelector("#refresh_week_data").onclick = () =>
+      this.loadWeekData(this._selectedWeekStart);
     this.querySelector("#new_meal_for_slot").onclick = () => {
       const slot = this._selectedMealSlot;
       this.openRecipeDialog(slot?.mealType, slot?.day);
@@ -697,6 +859,7 @@ class WeeklyMealPlannerCard extends HTMLElement {
           : "Gericht gespeichert und Nährwerte ergänzt.",
       );
       this.querySelector("#recipe_dialog").close();
+      await this.loadWeekData(this._selectedWeekStart);
     };
 
     this.querySelector("#auto_plan").onclick = async () => {
@@ -704,27 +867,21 @@ class WeeklyMealPlannerCard extends HTMLElement {
         await this._hass.callService(
           "weekly_meal_planner",
           "generate_week_plan",
-          {},
+          { week_start: this._selectedWeekStart },
         );
-        setStatus("Wochenplan wurde aktualisiert.");
+        if (!(await this.loadWeekData(this._selectedWeekStart))) return;
+        setStatus("Wochenplan und Einkaufsliste wurden aktualisiert.");
       } catch (error) {
         setStatus(error.message || "Wochenplan konnte nicht erstellt werden.", true);
       }
     };
-
-    this.querySelector("#regen_list").onclick = async () => {
-      try {
-        await this._hass.callService(
-          "weekly_meal_planner",
-          "generate_shopping_list",
-          {},
-        );
-        setStatus("Einkaufsliste wurde aktualisiert.");
-      } catch (error) {
-        setStatus(error.message || "Einkaufsliste konnte nicht aktualisiert werden.", true);
-      }
-    };
   }
+}
+
+function mondayOf(day) {
+  const date = new Date(`${day}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
+  return date.toISOString().slice(0, 10);
 }
 
 if (!customElements.get("weekly-meal-planner-card")) {

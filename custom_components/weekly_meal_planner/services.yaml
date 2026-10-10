@@ -34,6 +34,13 @@ delete_meal:
 generate_shopping_list:
   description: Aktualisiert Einkaufsliste und Sensoren für den aktuellen Wochenplan.
 
+get_week_data:
+  description: Gibt Plan, Nährwerte und Einkaufsliste für aktuelle oder nächste Woche zurück.
+  fields:
+    week_start:
+      description: Optional; Montag der gewünschten Woche. Standard ist aktuelle Woche.
+      example: "2026-10-12"
+
 search_ingredient:
   description: Sucht USDA-Nährwerttreffer für eine Zutat zur Auswahl im Rezeptformular.
   fields:
@@ -45,10 +52,14 @@ search_ingredient:
       example: true
 
 generate_week_plan:
-  description: Plant verfügbare Lunch- und Dinner-Rezepte für die aktuelle Woche.
+  description: Plant verfügbare Lunch- und Dinner-Rezepte für aktuelle oder nächste Woche.
+  fields:
+    week_start:
+      description: Optional; Montag der gewünschten Woche. Standard ist aktuelle Woche.
+      example: "2026-10-12"
 
 set_planned_meal:
-  description: Plant oder tauscht ein Gericht in einer Kachel der aktuellen Woche.
+  description: Plant oder tauscht ein Gericht in der aktuellen oder nächsten Woche.
   fields:
     day:
       description: Datum des geplanten Tages im Format YYYY-MM-DD

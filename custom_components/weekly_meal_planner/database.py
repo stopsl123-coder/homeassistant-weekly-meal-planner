@@ -1,4 +1,4 @@
-"""SQLite persistence for meals and the current weekly plan."""
+"""SQLite persistence for meals and weekly plans."""
 
 from __future__ import annotations
 

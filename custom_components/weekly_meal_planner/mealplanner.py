@@ -289,6 +289,7 @@ def build_dashboard_data(
             }
         )
     return {
+        "week_start": week_start.isoformat(),
         "plan": plan,
         "week_days": [
             (week_start + timedelta(days=offset)).isoformat()

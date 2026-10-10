@@ -129,14 +129,16 @@ Ein Neustart von Home Assistant löscht sie nicht.
 
 1. Speichere zuerst mindestens ein Rezept vom Typ **Mittagessen** oder
    **Abendessen**.
-2. Klicke in der Rezeptkarte auf **Woche automatisch planen**.
-3. Der Planer füllt die aktuelle Woche von Montag bis Sonntag mit Mittag- und
+2. Wähle oben in der Rezeptkarte aktuelle oder nächste Woche.
+3. Klicke auf **Diese Woche automatisch planen** oder
+   **Nächste Woche automatisch planen**.
+4. Der Planer füllt die ausgewählte Woche von Montag bis Sonntag mit Mittag- und
    Abendessen. Ausgeschlossene Zutaten, Kalorienziel und kürzlich verwendete
    Rezepte fließen in die Auswahl ein.
-4. Die Wochenübersicht erscheint in der Rezeptkarte. Der Kalender und die
-   Sensoren werden ebenfalls aktualisiert.
+5. Die Einkaufsliste der ausgewählten Woche erscheint direkt unter dem Plan.
+   Kalender und Sensoren beziehen sich weiterhin auf die aktuelle Woche.
 
-Erneutes Erstellen ersetzt den gespeicherten Plan für die aktuelle Woche.
+Erneutes Erstellen ersetzt Mittag- und Abendessen der ausgewählten Woche.
 Gespeicherte Rezepte und manuell geplante Frühstücke bleiben erhalten.
 
 Die Wochenübersicht zeigt Montag bis Sonntag mit je einer Kachel für Frühstück,
@@ -144,8 +146,12 @@ Mittagessen und Abendessen. Klicke auf eine Kachel, um gespeicherte Gerichte
 des passenden Typs auszuwählen und zu übernehmen. Freie Kacheln lassen sich
 genauso belegen. **Neues Gericht anlegen** öffnet Rezeptformular; startest du
 es aus einer Kachel, wird neues Gericht nach dem Speichern direkt dort
-eingeplant. Änderungen gelten nur für aktuelle Woche; nativer Kalender wird
-ebenfalls aktualisiert.
+eingeplant. Änderungen gelten für aktuelle oder nächste Woche. Der native
+Kalender zeigt Änderungen der aktuellen Woche.
+
+Die Navigation ist auf aktuelle und nächste Woche begrenzt. So kannst du den
+kommenden Einkauf planen, ohne Kalender und Sensoren von der aktuellen Woche
+wegzuschalten.
 
 Über die Gerichtsauswahl kannst du ein gespeichertes Gericht auch löschen.
 Nach Bestätigung wird es aus der Rezeptdatenbank und allen Wochenplan-Tagen
@@ -219,7 +225,10 @@ positive `amount` und `unit`.
 
 Weitere Aktionen findest du ebenfalls unter **Entwicklerwerkzeuge > Aktionen**:
 
-- `weekly_meal_planner.generate_week_plan`: aktuelle Woche neu planen.
+- `weekly_meal_planner.generate_week_plan`: angegebene Woche neu planen;
+  `week_start` erwartet den Montag als `YYYY-MM-DD`.
+- `weekly_meal_planner.get_week_data`: Plan, Nährwerte und Einkaufsliste der
+  aktuellen oder nächsten Woche als Service-Antwort abrufen.
 - `weekly_meal_planner.generate_shopping_list`: Sensoren für gespeicherten
   Plan aktualisieren.
 - `weekly_meal_planner.search_ingredient`: USDA-Treffer suchen. Datenbeispiel:

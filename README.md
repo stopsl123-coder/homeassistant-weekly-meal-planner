@@ -1,122 +1,111 @@
+<div align="center">
+
 # Weekly Meal Planner
 
-Home-Assistant-Integration zum Speichern von Rezepten, Planen einer Woche mit
-Frühstück, Mittag- und Abendessen, Berechnen von Nährwerten und Erstellen einer
-Einkaufsliste.
+### Wochenplanung, Nährwerte und Einkaufsliste direkt in Home Assistant
 
-## Funktionen
+Plane Frühstück, Mittag- und Abendessen für diese und nächste Woche. Rezepte
+bleiben lokal gespeichert; die Einkaufsliste wird automatisch aus deinen Plänen
+berechnet.
 
-- Rezepte und Wochenpläne in `/config/mealplanner.db`.
-- Nährwertabfrage bei USDA FoodData Central beim Speichern eines Rezepts.
-- Sensoren für Anzahl der Einkaufslistenpositionen sowie Wochenkalorien und
-  Makros.
-- Eine Wochenübersicht mit Frühstücks-, Mittags- und Abendessen-Kacheln zum
-  Auswählen gespeicherter Gerichte.
-- Gespeicherte Gerichte löschen und Tageskalorien aller geplanten Mahlzeiten
-  summieren.
-- Einen nativen Home-Assistant-Kalender mit einer Tagesübersicht der geplanten
-  Mahlzeiten.
-- Einkaufsmenge wird nur bei kompatiblen Einheiten umgerechnet und summiert.
-- Lovelace-Karte zum Eingeben von Rezepten und Ausführen der Planer-Aktionen.
-- Geplante Gerichte in der Wochenübersicht austauschen und kcal pro Portion
-  neben Mahlzeiten anzeigen.
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange?style=for-the-badge)](https://hacs.xyz/)
+[![Latest release](https://img.shields.io/github/v/release/stopsl123-coder/homeassistant-weekly-meal-planner?style=for-the-badge)](https://github.com/stopsl123-coder/homeassistant-weekly-meal-planner/releases)
+[![Tests](https://img.shields.io/github/actions/workflow/status/stopsl123-coder/homeassistant-weekly-meal-planner/release.yml?branch=main&label=Tests&style=for-the-badge)](https://github.com/stopsl123-coder/homeassistant-weekly-meal-planner/actions)
 
-Beim Speichern werden Zutatenbezeichnungen an USDA FoodData Central gesendet.
-Ein gültiger API-Schlüssel und Internetzugang sind dafür erforderlich.
-Nährwertsummen bleiben unbekannt, wenn Zutatenmenge nicht in Gewicht
-umgerechnet werden kann oder Nährwerte fehlen. Bei Stück-Zutaten kann Gewicht
-pro Stück angegeben werden. Volumen wird nicht pauschal mit Gewicht
-gleichgesetzt.
+</div>
+
+---
+
+## Auf einen Blick
+
+| Wochenplan | Rezepte | Einkaufsliste |
+| --- | --- | --- |
+| Sieben Tage mit Frühstück, Mittag- und Abendessen | Rezepte mit Portionen, Zutaten und Nährwerten speichern | Zutaten kompatibler Einheiten zusammenfassen |
+| Zwischen aktueller und nächster Woche wechseln | Gerichte je Mahlzeit auswählen oder automatisch planen | Liste für ausgewählte Woche direkt in Karte sehen |
+| Tageskalorien und native Kalender-Entity | Gerichte bearbeiten oder löschen | Sensoren für Dashboard und Automationen |
 
 ## Installation
 
-1. Dieses Repository in HACS als benutzerdefinierte **Integration** installieren.
-2. Home Assistant neu starten und **Weekly Meal Planner** unter Einstellungen >
-   Geräte & Dienste hinzufügen.
-3. USDA-FoodData-Central-API-Schlüssel eingeben. Schlüssel gibt es unter
-   <https://fdc.nal.usda.gov/api-key-signup.html>.
-4. `www/weekly_meal_planner/weekly_meal_planner.js` nach `/config/www/` als
-   `weekly_meal_planner.js` kopieren.
-5. `/local/weekly_meal_planner.js` als JavaScript-Modul-Dashboard-Ressource
-   registrieren und diese Karte hinzufügen:
+1. In HACS **Benutzerdefinierte Repositories** öffnen, Repository-URL
+   `https://github.com/stopsl123-coder/homeassistant-weekly-meal-planner`
+   eintragen und Kategorie **Integration** auswählen.
+2. **Weekly Meal Planner** installieren und Home Assistant neu starten.
+3. Unter **Einstellungen → Geräte & Dienste → Integration hinzufügen** nach
+   **Weekly Meal Planner** suchen.
+4. USDA FoodData Central API-Schlüssel eingeben. Kostenlosen Schlüssel unter
+   <https://fdc.nal.usda.gov/api-key-signup.html> anfordern.
+5. Lovelace-Kartendatei
+   [`weekly_meal_planner.js`](www/weekly_meal_planner/weekly_meal_planner.js)
+   nach `/config/www/weekly_meal_planner.js` kopieren.
+6. Unter **Einstellungen → Dashboards → Ressourcen** `/local/weekly_meal_planner.js`
+   als **JavaScript-Modul** hinzufügen.
+7. Karte zum Dashboard hinzufügen:
 
    ```yaml
    type: custom:weekly-meal-planner-card
    ```
 
-Die Karte speichert Rezepte, erstellt Wochenpläne und aktualisiert den
-Einkaufslisten-Sensor. Die Integration erstellt
-`sensor.weekly_meal_planner_shopping_list` und
-`sensor.weekly_meal_planner_calories` sowie `calendar.weekly_meal_planner`.
+> **Hinweis:** Integration und Lovelace-Karte sind getrennte Bestandteile.
+> Die Sensoren funktionieren auch ohne Karte; für Rezeptverwaltung und
+> Wochenansicht wird die JavaScript-Ressource benötigt.
 
-Den Essensplan zusammen mit Kalenderwochen und Feiertagen in einer nativen
-Kalenderkarte anzeigen:
+## So funktioniert die Planung
+
+Die Karte zeigt Montag bis Sonntag und lässt dich zwischen aktueller und
+nächster Woche wechseln. Du kannst Mahlzeiten einzeln belegen oder Mittag- und
+Abendessen automatisch planen lassen. Manuell eingeplante Frühstücke bleiben
+bei automatischer Planung erhalten.
+
+Die Einkaufsliste gehört zur ausgewählten Woche. Zutatenmengen werden anhand
+der Haushaltsportionen skaliert und nur innerhalb kompatibler Einheiten
+zusammengefasst. Der native Home-Assistant-Kalender und die Kalorien-Sensoren
+beziehen sich weiterhin auf die aktuelle Woche.
+
+## Nährwerte und Datenquellen
+
+Beim Suchen und Speichern von Zutaten nutzt die Integration USDA FoodData
+Central. Die Zutatenbezeichnungen werden dazu an USDA übertragen. Nährwerte
+werden pro Portion berechnet. Wenn Einheit oder Nährwert fehlen, wird die
+Summe als unvollständig angezeigt statt geschätzt.
+
+Aktuell ist keine deutsche Zutaten- oder Fertiggerichte-Datenbank eingebunden.
+Open Food Facts eignet sich für verpackte Markenprodukte, aber nicht als
+verlässliche Rezeptdatenbank. Die Datenbank steht unter ODbL; bei einer
+Integration wären Quellenhinweis und Share-Alike-Pflichten zu beachten. Der
+deutsche Bundeslebensmittelschlüssel (BLS) ist fachlich passend für
+Lebensmittel-Nährwerte, wird aber lizenziert bereitgestellt; eine freie
+öffentliche API ist nicht dokumentiert. Fertiggericht-Rezeptdaten benötigen
+eine gesonderte Prüfung von API-Zugang und Nutzungsrechten.
+
+## Home-Assistant-Entities
+
+- `sensor.weekly_meal_planner_shopping_list`: Anzahl der Positionen; Zutaten
+  und Mengen stehen im Attribut `items` für die aktuelle Woche.
+- `sensor.weekly_meal_planner_calories`: Wochenkalorien, Tageswerte, Makros
+  und geplanter Essensplan der aktuellen Woche.
+- `calendar.weekly_meal_planner`: geplante Mahlzeiten im nativen Kalender.
+
+Beispiel für die Kalenderkarte:
 
 ```yaml
 type: calendar
 entities:
   - calendar.weekly_meal_planner
-  - calendar.kalenderwochen
-  - calendar.feiertage_in_deutschland
 ```
 
-Die native Kalenderkarte benötigt keine Lovelace-Custom-Card-Ressource. Die
-Rezeptkarte bleibt separat und wird wie oben beschrieben manuell registriert.
+## Einstellungen und Hilfe
 
-Unter **Einstellungen > Geräte & Dienste > Weekly Meal Planner > Optionen**
-können API-Schlüssel, tägliches Kalorienziel, Haushaltsportionen und
-ausgeschlossene Zutaten konfiguriert werden. Das Kalorienziel bezieht sich auf
-die geplanten Mittag- und Abendessen zusammen; Frühstück ist nicht Teil des
-automatischen Wochenplans. Rezeptzutaten beschreiben Gesamtmengen für die
-gespeicherte Rezept-Portionenzahl. Nährwerte werden pro Portion berechnet und
-Einkaufsmengen auf Haushaltsportionen skaliert.
+Unter **Einstellungen → Geräte & Dienste → Weekly Meal Planner → Optionen**
+kannst du API-Schlüssel, Kalorienziel, Haushaltsportionen und ausgeschlossene
+Zutaten anpassen. Rezepte und Wochenpläne bleiben in
+`/config/mealplanner.db` gespeichert.
 
-Eine vorhandene YAML-Konfiguration mit `weekly_meal_planner: api_key:` wird
-automatisch in einen Config-Entry importiert. Den YAML-Block nach dem Neustart
-entfernen.
-
-Eine ausführliche Schritt-für-Schritt-Anleitung zum Einrichten, Speichern von
-Rezepten und Anzeigen des Kalenders findest du in
-[docs/ANLEITUNG.md](docs/ANLEITUNG.md).
-
-## Services
-
-`weekly_meal_planner.add_meal` erwartet Rezeptname, Mahlzeitentyp
-(`breakfast`, `lunch` oder `dinner`) und Zutaten:
-
-```yaml
-name: Hähnchen mit Reis
-meal_type: dinner
-servings: 2
-ingredients:
-  Hähnchen:
-    amount: 200
-    unit: g
-  Reis:
-    amount: 150
-    unit: g
-```
-
-Zutatenmengen beschreiben Gesamtmengen für `servings` Rezeptportionen
-(`servings` ist standardmäßig 1). Nährwerte werden pro Portion berechnet.
-`weekly_meal_planner.generate_week_plan` verteilt gespeicherte Mittags- und
-Abendessen-Rezepte auf die aktuelle Woche von Montag bis Sonntag.
-Geplante Mahlzeiten lassen sich in der Lovelace-Karte je Tag austauschen;
-`weekly_meal_planner.set_planned_meal` ist der zugehörige Service. kcal pro
-Portion ergeben sich aus der Summe der Zutaten-Nährwerte.
-`weekly_meal_planner.delete_meal` löscht ein Rezept und entfernt es aus allen
-gespeicherten Wochenplänen.
-`weekly_meal_planner.generate_shopping_list` aktualisiert Einkaufslisten- und
-Nährwertsensoren.
+Die vollständige Anleitung mit Rezeptverwaltung, Services und Fehlerbehebung
+steht in [docs/ANLEITUNG.md](docs/ANLEITUNG.md).
 
 ## Entwicklung
-
-Testabhängigkeiten installieren und Tests ausführen:
 
 ```sh
 python -m pip install -r requirements_test.txt
 python -m pytest -q
 ```
-
-GitHub Actions kompiliert die Integration und führt Unit- und
-Home-Assistant-Integrationstests bei Pushes und Pull Requests aus.

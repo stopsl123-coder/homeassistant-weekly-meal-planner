@@ -87,6 +87,7 @@ class MealCaloriesSensor(CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         nutrition = self.coordinator.data["nutrition"]
         return {
+            "week_start": self.coordinator.data["week_start"],
             "per_day": nutrition["per_day"],
             "daily_macros": nutrition["daily_macros"],
             "week_macros": nutrition["week_macros"],

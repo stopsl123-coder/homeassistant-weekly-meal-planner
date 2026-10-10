@@ -36,6 +36,7 @@ SERVICE_NAMES = (
     "delete_meal",
     "generate_week_plan",
     "generate_shopping_list",
+    "get_week_data",
     "search_ingredient",
     "set_planned_meal",
 )
@@ -69,8 +70,9 @@ class MealPlannerCoordinator(DataUpdateCoordinator):
         )
 
     async def _async_update_data(self) -> dict[str, Any]:
-        today = dt_util.now().date()
-        start = monday_for(today)
+        return await self.async_get_week_data(monday_for(dt_util.now().date()))
+
+    async def async_get_week_data(self, start: date) -> dict[str, Any]:
         try:
             meals, plan, recent_usage, food_search = await self.hass.async_add_executor_job(
                 self._load_dashboard_inputs, start.isoformat()
@@ -196,6 +198,32 @@ SET_PLANNED_MEAL_SCHEMA = vol.Schema(
         ),
     }
 )
+WEEK_START_SCHEMA = vol.Schema(
+    {
+        vol.Optional("week_start"): vol.All(
+            str, str.strip, vol.Length(min=10, max=10)
+        )
+    }
+)
+
+
+def _validate_week_start(value: str | None) -> date:
+    current_week = monday_for(dt_util.now().date())
+    if value is None:
+        return current_week
+    try:
+        week_start = date.fromisoformat(value)
+    except ValueError as err:
+        raise HomeAssistantError("Ungültiges Startdatum der Woche.") from err
+    if week_start.isoformat() != value or week_start.weekday() != 0:
+        raise HomeAssistantError(
+            "Der Wochenstart muss ein Montag im Format YYYY-MM-DD sein."
+        )
+    if week_start not in (current_week, current_week + timedelta(days=7)):
+        raise HomeAssistantError(
+            "Du kannst die aktuelle oder die nächste Woche auswählen."
+        )
+    return week_start
 
 
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
@@ -349,8 +377,8 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
         await coordinator.async_refresh()
 
     async def handle_generate_week_plan(call: ServiceCall) -> None:
+        start = _validate_week_start(call.data.get("week_start"))
         meals = await hass.async_add_executor_job(database.get_meals)
-        start = monday_for(dt_util.now().date())
         recent_usage = await hass.async_add_executor_job(
             database.get_recent_meal_usage, start.isoformat()
         )
@@ -379,10 +407,15 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
         await hass.async_add_executor_job(
             database.replace_week_plan, start.isoformat(), plan
         )
-        await coordinator.async_request_refresh()
+        if start == monday_for(dt_util.now().date()):
+            await coordinator.async_refresh()
 
     async def handle_generate_shopping_list(call: ServiceCall) -> None:
         await coordinator.async_request_refresh()
+
+    async def handle_get_week_data(call: ServiceCall) -> dict[str, Any]:
+        week_start = _validate_week_start(call.data.get("week_start"))
+        return await coordinator.async_get_week_data(week_start)
 
     async def handle_set_planned_meal(call: ServiceCall) -> None:
         try:
@@ -392,10 +425,13 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
         if day.isoformat() != call.data["day"]:
             raise HomeAssistantError("Datum muss das Format YYYY-MM-DD haben.")
 
-        week_start = monday_for(dt_util.now().date())
-        if monday_for(day) != week_start:
+        current_week = monday_for(dt_util.now().date())
+        if monday_for(day) not in (
+            current_week,
+            current_week + timedelta(days=7),
+        ):
             raise HomeAssistantError(
-                "Du kannst nur Gerichte der aktuellen Woche ändern."
+                "Du kannst Gerichte nur für die aktuelle oder nächste Woche ändern."
             )
 
         meal = await hass.async_add_executor_job(
@@ -418,7 +454,8 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
         )
         if not updated:
             raise HomeAssistantError("Gericht konnte nicht in den Plan übernommen werden.")
-        await coordinator.async_refresh()
+        if monday_for(day) == current_week:
+            await coordinator.async_refresh()
 
     hass.services.async_register(
         DOMAIN, "add_meal", handle_add_meal, schema=ADD_MEAL_SCHEMA
@@ -430,7 +467,14 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
         DOMAIN,
         "generate_week_plan",
         handle_generate_week_plan,
-        schema=EMPTY_SCHEMA,
+        schema=WEEK_START_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "get_week_data",
+        handle_get_week_data,
+        schema=WEEK_START_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
     )
     hass.services.async_register(
         DOMAIN,

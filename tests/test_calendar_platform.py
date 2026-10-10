@@ -159,6 +159,57 @@ async def test_weekly_plan_is_available_in_home_assistant_calendar(hass) -> None
     assert hass.services.has_service(DOMAIN, "search_ingredient")
     assert hass.services.has_service(DOMAIN, "set_planned_meal")
 
+    next_week = week_start + timedelta(days=7)
+    await hass.services.async_call(
+        DOMAIN,
+        "set_planned_meal",
+        {
+            "day": next_week.isoformat(),
+            "meal_type": "lunch",
+            "meal_name": "Salat",
+        },
+        blocking=True,
+    )
+    next_week_data = await hass.services.async_call(
+        DOMAIN,
+        "get_week_data",
+        {"week_start": next_week.isoformat()},
+        blocking=True,
+        return_response=True,
+    )
+    assert next_week_data["week_start"] == next_week.isoformat()
+    assert next_week_data["plan"][next_week.isoformat()]["lunch"] == "Salat"
+    assert next_week_data["shopping_list"]["Salat"] == {
+        "amount": 200.0,
+        "unit": "g",
+    }
+    assert coordinator.data["week_start"] == week_start.isoformat()
+    await hass.services.async_call(
+        DOMAIN,
+        "set_planned_meal",
+        {
+            "day": next_week.isoformat(),
+            "meal_type": "breakfast",
+            "meal_name": "Haferbrei",
+        },
+        blocking=True,
+    )
+
+    await hass.services.async_call(
+        DOMAIN,
+        "generate_week_plan",
+        {"week_start": next_week.isoformat()},
+        blocking=True,
+    )
+    next_week_data = await hass.services.async_call(
+        DOMAIN,
+        "get_week_data",
+        {"week_start": next_week.isoformat()},
+        blocking=True,
+        return_response=True,
+    )
+    assert next_week_data["plan"][next_week.isoformat()]["breakfast"] == "Haferbrei"
+
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
 
