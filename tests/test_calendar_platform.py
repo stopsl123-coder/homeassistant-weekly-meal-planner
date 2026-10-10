@@ -59,3 +59,41 @@ async def test_weekly_plan_is_available_in_home_assistant_calendar(hass) -> None
 
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
+
+
+@pytest.mark.asyncio
+async def test_ingredient_search_returns_results_to_service_caller(hass) -> None:
+    entry = MockConfigEntry(domain=DOMAIN, data={"api_key": "test-key"})
+    entry.add_to_hass(hass)
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    database = hass.data[DOMAIN][entry.entry_id]["database"]
+    matches = [
+        {
+            "fdc_id": 123,
+            "description": "Egg, whole, raw",
+            "nutrition": {
+                "calories": 143,
+                "protein": 12.56,
+                "fat": 9.51,
+                "carbs": 0.72,
+            },
+        }
+    ]
+    await hass.async_add_executor_job(
+        database.cache_nutrition_search, "egg", matches
+    )
+
+    response = await hass.services.async_call(
+        DOMAIN,
+        "search_ingredient",
+        {"query": "egg"},
+        blocking=True,
+        return_response=True,
+    )
+
+    assert response == {"query": "egg", "results": matches}
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()

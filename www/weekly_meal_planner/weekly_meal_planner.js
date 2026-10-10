@@ -232,13 +232,27 @@ class WeeklyMealPlannerCard extends HTMLElement {
           return;
         }
         try {
-          await this.subscribeToNutritionSearchUpdates();
-          await this._hass.callService(
+          const serviceResult = await this._hass.callService(
             "weekly_meal_planner",
             "search_ingredient",
             { query },
+            undefined,
+            false,
+            true,
           );
-          this.updateNutritionSearchResults();
+          const search = serviceResult?.response;
+          if (
+            search?.query?.toLocaleLowerCase() === query.toLocaleLowerCase() &&
+            Array.isArray(search.results)
+          ) {
+            this.updateNutritionSearchResults(search);
+          }
+          const matches = row.querySelector(".usda-match");
+          if (!matches || matches.hidden || !matches.options.length) {
+            throw new Error(
+              "USDA-Suche lieferte Treffer, Auswahl konnte nicht angezeigt werden.",
+            );
+          }
           setStatus("USDA-Treffer geladen. Passenden Eintrag auswählen.");
         } catch (error) {
           setStatus(error.message || "USDA-Suche fehlgeschlagen.", true);

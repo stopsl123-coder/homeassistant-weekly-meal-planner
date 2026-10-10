@@ -13,7 +13,7 @@ import aiohttp
 import voluptuous as vol
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -244,7 +244,7 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
             )
         return results
 
-    async def handle_search_ingredient(call: ServiceCall) -> None:
+    async def handle_search_ingredient(call: ServiceCall) -> dict[str, Any]:
         query = call.data["query"]
         results = await search_and_cache(query, call.data["force_refresh"])
         if not results:
@@ -252,6 +252,7 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
                 f"USDA fand keine verwendbaren Nährwerte für „{query}“."
             )
         await coordinator.async_request_refresh()
+        return {"query": query, "results": results}
 
     async def handle_add_meal(call: ServiceCall) -> None:
         ingredients = call.data["ingredients"]
@@ -348,4 +349,5 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
         "search_ingredient",
         handle_search_ingredient,
         schema=SEARCH_INGREDIENT_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
     )
