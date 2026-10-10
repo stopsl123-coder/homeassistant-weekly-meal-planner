@@ -187,6 +187,9 @@ async def test_ingredient_search_returns_results_to_service_caller(hass) -> None
     await hass.async_add_executor_job(
         database.cache_nutrition_search, "egg", matches
     )
+    coordinator: MealPlannerCoordinator = hass.data[DOMAIN][entry.entry_id][
+        "coordinator"
+    ]
 
     response = await hass.services.async_call(
         DOMAIN,
@@ -218,6 +221,7 @@ async def test_ingredient_search_returns_results_to_service_caller(hass) -> None
     stored_meal = await hass.async_add_executor_job(database.get_meal, "Rührei")
     assert stored_meal["ingredients"]["Ei"]["weight_per_unit_g"] == 60
     assert stored_meal["ingredients"]["Ei"]["usda_fdc_id"] == 123
+    assert any(meal["name"] == "Rührei" for meal in coordinator.data["meals"])
 
     today = dt_util.now().date()
     week_start = monday_for(today)

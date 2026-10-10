@@ -330,7 +330,7 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
             call.data["servings"],
             enriched,
         )
-        await coordinator.async_request_refresh()
+        await coordinator.async_refresh()
 
     async def handle_generate_week_plan(call: ServiceCall) -> None:
         meals = await hass.async_add_executor_job(database.get_meals)
