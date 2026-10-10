@@ -1,5 +1,5 @@
 add_meal:
-  description: Speichert Gericht und USDA-Nährwerte pro 100 g.
+  description: Speichert Rezept mit Gesamtzutatenmengen und USDA-Nährwerten pro 100 g.
   fields:
     name:
       description: Name des Gerichts
@@ -7,6 +7,9 @@ add_meal:
     meal_type:
       description: Art der Mahlzeit
       example: "lunch"
+    servings:
+      description: Anzahl der Portionen in den angegebenen Gesamtmengen
+      example: 2
     ingredients:
       description: Zutaten mit positiver Menge und Einheit
       example:
@@ -19,6 +22,16 @@ add_meal:
 
 generate_shopping_list:
   description: Aktualisiert Einkaufsliste und Sensoren für den aktuellen Wochenplan.
+
+search_ingredient:
+  description: Sucht USDA-Nährwerttreffer für eine Zutat zur Auswahl im Rezeptformular.
+  fields:
+    query:
+      description: Zutatenname für die USDA-Suche
+      example: "brown rice"
+    force_refresh:
+      description: USDA-Suche trotz gültigem Zwischenspeicher erneut ausführen
+      example: true
 
 generate_week_plan:
   description: Plant verfügbare Lunch- und Dinner-Rezepte für die aktuelle Woche.

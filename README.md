@@ -9,6 +9,8 @@ Abendessen, Berechnen von Nährwerten und Erstellen einer Einkaufsliste.
 - Nährwertabfrage bei USDA FoodData Central beim Speichern eines Rezepts.
 - Sensoren für Anzahl der Einkaufslistenpositionen sowie Wochenkalorien und
   Makros.
+- Einen nativen Home-Assistant-Kalender mit einer Tagesübersicht der geplanten
+  Mittag- und Abendessen.
 - Einkaufsmenge wird nur bei kompatiblen Einheiten umgerechnet und summiert.
 - Lovelace-Karte zum Eingeben von Rezepten und Ausführen der Planer-Aktionen.
 
@@ -37,7 +39,29 @@ Gewicht gleichgesetzt.
 Die Karte speichert Rezepte, erstellt Wochenpläne und aktualisiert den
 Einkaufslisten-Sensor. Die Integration erstellt
 `sensor.weekly_meal_planner_shopping_list` und
-`sensor.weekly_meal_planner_calories`.
+`sensor.weekly_meal_planner_calories` sowie `calendar.weekly_meal_planner`.
+
+Den Essensplan zusammen mit Kalenderwochen und Feiertagen in einer nativen
+Kalenderkarte anzeigen:
+
+```yaml
+type: calendar
+entities:
+  - calendar.weekly_meal_planner
+  - calendar.kalenderwochen
+  - calendar.feiertage_in_deutschland
+```
+
+Die native Kalenderkarte benötigt keine Lovelace-Custom-Card-Ressource. Die
+Rezeptkarte bleibt separat und wird wie oben beschrieben manuell registriert.
+
+Unter **Einstellungen > Geräte & Dienste > Weekly Meal Planner > Optionen**
+können API-Schlüssel, tägliches Kalorienziel, Haushaltsportionen und
+ausgeschlossene Zutaten konfiguriert werden. Das Kalorienziel bezieht sich auf
+die geplanten Mittag- und Abendessen zusammen; Frühstück ist nicht Teil des
+automatischen Wochenplans. Rezeptzutaten beschreiben Gesamtmengen für die
+gespeicherte Rezept-Portionenzahl. Nährwerte werden pro Portion berechnet und
+Einkaufsmengen auf Haushaltsportionen skaliert.
 
 Eine vorhandene YAML-Konfiguration mit `weekly_meal_planner: api_key:` wird
 automatisch in einen Config-Entry importiert. Den YAML-Block nach dem Neustart
@@ -51,6 +75,7 @@ entfernen.
 ```yaml
 name: Hähnchen mit Reis
 meal_type: dinner
+servings: 2
 ingredients:
   Hähnchen:
     amount: 200
@@ -60,7 +85,8 @@ ingredients:
     unit: g
 ```
 
-Zutatenmengen gelten jeweils für eine geplante Portion.
+Zutatenmengen beschreiben Gesamtmengen für `servings` Rezeptportionen
+(`servings` ist standardmäßig 1). Nährwerte werden pro Portion berechnet.
 `weekly_meal_planner.generate_week_plan` verteilt gespeicherte Mittags- und
 Abendessen-Rezepte auf die aktuelle Woche von Montag bis Sonntag.
 `weekly_meal_planner.generate_shopping_list` aktualisiert Einkaufslisten- und
@@ -68,11 +94,12 @@ Nährwertsensoren.
 
 ## Entwicklung
 
-Tests ausführen:
+Testabhängigkeiten installieren und Tests ausführen:
 
 ```sh
-python -m unittest discover -s tests -v
+python -m pip install -r requirements_test.txt
+python -m pytest -q
 ```
 
-GitHub Actions kompiliert die Integration und führt diese Tests bei Pushes und
-Pull Requests aus.
+GitHub Actions kompiliert die Integration und führt Unit- und
+Home-Assistant-Integrationstests bei Pushes und Pull Requests aus.

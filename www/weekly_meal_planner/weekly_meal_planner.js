@@ -9,6 +9,82 @@ class WeeklyMealPlannerCard extends HTMLElement {
       this.render();
       this.rendered = true;
     }
+    this.updateDashboard();
+    this.updateNutritionSearchResults();
+  }
+
+  updateDashboard() {
+    const state = this._hass?.states["sensor.weekly_meal_planner_calories"];
+    const plan = state?.attributes.plan || {};
+    const container = this.querySelector("#week_plan");
+    if (!container) return;
+
+    container.replaceChildren();
+    const entries = Object.entries(plan).sort(([first], [second]) =>
+      first.localeCompare(second),
+    );
+    if (!entries.length) {
+      const empty = document.createElement("p");
+      empty.textContent = "Noch kein Wochenplan. Mit „Woche automatisch planen“ starten.";
+      container.appendChild(empty);
+      return;
+    }
+
+    for (const [day, meals] of entries) {
+      const section = document.createElement("section");
+      section.className = "week-day";
+      const heading = document.createElement("h4");
+      heading.textContent = new Intl.DateTimeFormat("de-DE", {
+        weekday: "long",
+        day: "numeric",
+        month: "short",
+      }).format(new Date(`${day}T12:00:00`));
+      section.appendChild(heading);
+      for (const [mealType, mealName] of Object.entries(meals)) {
+        const line = document.createElement("div");
+        const label = {
+          breakfast: "Frühstück",
+          lunch: "Mittagessen",
+          dinner: "Abendessen",
+        }[mealType] || mealType;
+        line.textContent = `${label}: ${mealName}`;
+        section.appendChild(line);
+      }
+      container.appendChild(section);
+    }
+  }
+
+  updateNutritionSearchResults() {
+    const search =
+      this._hass?.states["sensor.weekly_meal_planner_shopping_list"]
+        ?.attributes.latest_nutrition_search;
+    if (!search?.query || !Array.isArray(search.results)) return;
+
+    for (const row of this.querySelectorAll(".ingredient-row")) {
+      const input = row.querySelector('input[aria-label="Zutat"]');
+      const select = row.querySelector(".usda-match");
+      if (input.value.trim().toLocaleLowerCase() !== search.query.toLocaleLowerCase()) {
+        select.replaceChildren();
+        select.value = "";
+        select.hidden = true;
+        continue;
+      }
+      select.replaceChildren();
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "Treffer auswählen";
+      select.appendChild(placeholder);
+      for (const result of search.results) {
+        const option = document.createElement("option");
+        option.value = String(result.fdc_id);
+        option.textContent = `${result.description} · ${Math.round(result.nutrition.calories)} kcal/100 g`;
+        select.appendChild(option);
+      }
+      select.hidden = search.results.length === 0;
+      if (search.results.length === 1) {
+        select.value = String(search.results[0].fdc_id);
+      }
+    }
   }
 
   getCardSize() {
@@ -19,16 +95,24 @@ class WeeklyMealPlannerCard extends HTMLElement {
     this.innerHTML = `
       <style>
         .meal-form { display: grid; gap: 8px; }
-        .ingredient-row { display: flex; gap: 8px; margin-bottom: 8px; }
-        .ingredient-row input, .ingredient-row select { min-width: 0; flex: 1; }
+        .ingredient-row { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+        .ingredient-row input, .ingredient-row select { min-width: 0; }
+        .ingredient-row button, .ingredient-row .usda-match { grid-column: 1 / -1; }
+        .week-plan { display: grid; gap: 8px; margin-bottom: 16px; }
+        .week-day { padding: 8px; border: 1px solid var(--divider-color); border-radius: 6px; }
+        .week-day h4 { margin: 0 0 4px; }
         .meal-planner-status { min-height: 1.5em; }
       </style>
 
       <ha-card header="Wochenplaner">
         <div class="card-content">
+          <h3>Wochenübersicht</h3>
+          <div id="week_plan" class="week-plan"></div>
           <div class="meal-form">
             <h3>Neues Gericht</h3>
             <input id="meal_name" placeholder="Gerichtname" maxlength="100" required>
+            <label for="servings">Portionen pro Rezept</label>
+            <input id="servings" type="number" min="1" max="100" value="2" required>
             <select id="meal_type" aria-label="Mahlzeit">
               <option value="lunch">Mittagessen</option>
               <option value="dinner">Abendessen</option>
@@ -77,19 +161,59 @@ class WeeklyMealPlannerCard extends HTMLElement {
         unit.appendChild(option);
       }
 
-      row.append(name, amount, unit);
+      const search = document.createElement("button");
+      search.type = "button";
+      search.textContent = "USDA-Treffer suchen";
+
+      const matches = document.createElement("select");
+      matches.className = "usda-match";
+      matches.setAttribute("aria-label", "USDA-Treffer");
+      matches.hidden = true;
+      name.addEventListener("input", () => {
+        matches.replaceChildren();
+        matches.value = "";
+        matches.hidden = true;
+      });
+
+      search.onclick = async () => {
+        const query = name.value.trim();
+        if (!query) {
+          setStatus("Bitte zuerst Zutatennamen eingeben.", true);
+          return;
+        }
+        try {
+          await this._hass.callService(
+            "weekly_meal_planner",
+            "search_ingredient",
+            { query },
+          );
+          this.updateNutritionSearchResults();
+          setStatus("USDA-Treffer geladen. Passenden Eintrag auswählen.");
+        } catch (error) {
+          setStatus(error.message || "USDA-Suche fehlgeschlagen.", true);
+        }
+      };
+
+      row.append(name, amount, unit, search, matches);
       container.appendChild(row);
     };
 
     this.querySelector("#save_meal").onclick = async () => {
       const name = this.querySelector("#meal_name").value.trim();
       const mealType = this.querySelector("#meal_type").value;
+      const servings = Number(this.querySelector("#servings").value);
       const ingredients = {};
+
+      if (!Number.isInteger(servings) || servings < 1 || servings > 100) {
+        setStatus("Bitte gültige Portionenzahl zwischen 1 und 100 eingeben.", true);
+        return;
+      }
 
       for (const row of container.querySelectorAll(".ingredient-row")) {
         const item = row.querySelector('input[aria-label="Zutat"]').value.trim();
         const amount = Number(row.querySelector('input[aria-label="Menge"]').value);
         const unit = row.querySelector("select").value;
+        const selectedMatch = row.querySelector(".usda-match");
         if (!item || !Number.isFinite(amount) || amount <= 0) {
           setStatus("Bitte Gericht und gültige Zutatenmengen eingeben.", true);
           return;
@@ -98,7 +222,15 @@ class WeeklyMealPlannerCard extends HTMLElement {
           setStatus(`Zutat "${item}" ist doppelt. Bitte Mengen zusammenfassen.`, true);
           return;
         }
-        ingredients[item] = { amount, unit };
+        if (!selectedMatch.value) {
+          setStatus(`Bitte für „${item}“ USDA-Treffer suchen und auswählen.`, true);
+          return;
+        }
+        ingredients[item] = {
+          amount,
+          unit,
+          fdc_id: Number(selectedMatch.value),
+        };
       }
 
       if (!name || Object.keys(ingredients).length === 0) {
@@ -110,6 +242,7 @@ class WeeklyMealPlannerCard extends HTMLElement {
         await this._hass.callService("weekly_meal_planner", "add_meal", {
           name,
           meal_type: mealType,
+          servings,
           ingredients,
         });
         setStatus("Gericht gespeichert und Nährwerte ergänzt.");

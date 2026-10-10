@@ -15,8 +15,8 @@ from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
@@ -27,20 +27,26 @@ from .mealplanner import (
     generate_week_plan,
     monday_for,
 )
-from .nutrition_api import get_nutrition_for_item
+from .nutrition_api import search_nutrition_for_item
 
 _LOGGER = logging.getLogger(__name__)
-PLATFORMS = [Platform.SENSOR]
-SERVICE_NAMES = ("add_meal", "generate_week_plan", "generate_shopping_list")
+PLATFORMS = [Platform.SENSOR, Platform.CALENDAR]
+SERVICE_NAMES = (
+    "add_meal",
+    "generate_week_plan",
+    "generate_shopping_list",
+    "search_ingredient",
+)
 MEAL_TYPES = {"breakfast", "lunch", "dinner"}
 CONFIG_SCHEMA = vol.Schema(
-    {
-        vol.Optional(DOMAIN): vol.Schema(
-            {vol.Required("api_key"): cv.string}
-        )
-    },
+    {vol.Optional(DOMAIN): vol.Schema({vol.Required("api_key"): cv.string})},
     extra=vol.ALLOW_EXTRA,
 )
+DEFAULT_SETTINGS = {
+    "target_kcal": 2000,
+    "household_servings": 2,
+    "excluded_ingredients": "",
+}
 
 
 class MealPlannerCoordinator(DataUpdateCoordinator):
@@ -52,6 +58,7 @@ class MealPlannerCoordinator(DataUpdateCoordinator):
         database: MealPlannerDatabase,
     ) -> None:
         self.database = database
+        self.settings: dict[str, Any] = DEFAULT_SETTINGS.copy()
         super().__init__(
             hass,
             _LOGGER,
@@ -63,17 +70,33 @@ class MealPlannerCoordinator(DataUpdateCoordinator):
         today = dt_util.now().date()
         start = monday_for(today)
         try:
-            meals, plan = await self.hass.async_add_executor_job(
+            meals, plan, recent_usage, food_search = await self.hass.async_add_executor_job(
                 self._load_dashboard_inputs, start.isoformat()
             )
         except (OSError, sqlite3.Error, ValueError, TypeError) as err:
             raise UpdateFailed(f"Planerdaten konnten nicht geladen werden: {err}") from err
-        return build_dashboard_data(plan, meals)
+        return build_dashboard_data(
+            plan,
+            meals,
+            self.settings["household_servings"],
+            self.settings["target_kcal"],
+            food_search,
+        )
 
     def _load_dashboard_inputs(
         self, week_start: str
-    ) -> tuple[list[dict[str, Any]], dict[str, dict[str, str]]]:
-        return self.database.get_meals(), self.database.get_week_plan(week_start)
+    ) -> tuple[
+        list[dict[str, Any]],
+        dict[str, dict[str, str]],
+        dict[str, int],
+        dict[str, Any],
+    ]:
+        return (
+            self.database.get_meals(),
+            self.database.get_week_plan(week_start),
+            self.database.get_recent_meal_usage(week_start),
+            self.database.get_latest_nutrition_search(),
+        )
 
 
 def _validate_ingredients(value: Any) -> dict[str, dict[str, Any]]:
@@ -92,6 +115,7 @@ def _validate_ingredients(value: Any) -> dict[str, dict[str, Any]]:
 
         amount = details.get("amount")
         unit = details.get("unit")
+        fdc_id = details.get("fdc_id")
         if (
             isinstance(amount, bool)
             or not isinstance(amount, (int, float))
@@ -101,18 +125,43 @@ def _validate_ingredients(value: Any) -> dict[str, dict[str, Any]]:
             raise vol.Invalid(f"Ingredient '{name}' must have a positive amount.")
         if not isinstance(unit, str) or not unit.strip() or len(unit) > 30:
             raise vol.Invalid(f"Ingredient '{name}' must have a valid unit.")
-        validated[normalized_name] = {"amount": float(amount), "unit": unit.strip()}
+        if fdc_id is not None and (
+            isinstance(fdc_id, bool) or not isinstance(fdc_id, int) or fdc_id <= 0
+        ):
+            raise vol.Invalid(f"Ingredient '{name}' has an invalid USDA food ID.")
+        validated[normalized_name] = {
+            "amount": float(amount),
+            "unit": unit.strip(),
+            **({"fdc_id": fdc_id} if fdc_id is not None else {}),
+        }
     return validated
+
+
+def _coordinator_settings(entry: ConfigEntry) -> dict[str, Any]:
+    settings = {**DEFAULT_SETTINGS, **entry.options}
+    settings["excluded_ingredients"] = str(settings["excluded_ingredients"])
+    settings["target_kcal"] = int(settings["target_kcal"])
+    settings["household_servings"] = int(settings["household_servings"])
+    return settings
 
 
 ADD_MEAL_SCHEMA = vol.Schema(
     {
         vol.Required("name"): vol.All(str, str.strip, vol.Length(min=1, max=100)),
         vol.Required("meal_type"): vol.In(MEAL_TYPES),
+        vol.Optional("servings", default=1): vol.All(
+            vol.Coerce(int), vol.Range(min=1, max=100)
+        ),
         vol.Required("ingredients"): _validate_ingredients,
     }
 )
 EMPTY_SCHEMA = vol.Schema({})
+SEARCH_INGREDIENT_SCHEMA = vol.Schema(
+    {
+        vol.Required("query"): vol.All(str, str.strip, vol.Length(min=1, max=100)),
+        vol.Optional("force_refresh", default=False): cv.boolean,
+    }
+)
 
 
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
@@ -136,13 +185,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryNotReady(f"Could not initialize meal database: {err}") from err
 
     coordinator = MealPlannerCoordinator(hass, database)
+    coordinator.settings = _coordinator_settings(entry)
     await coordinator.async_config_entry_first_refresh()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         "database": database,
         "coordinator": coordinator,
-        "api_key": entry.data["api_key"],
+        "api_key": entry.options.get("api_key", entry.data["api_key"]),
     }
 
+    entry.async_on_unload(entry.add_update_listener(async_reload_entry))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     _register_services(hass, entry)
     return True
@@ -160,6 +211,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
+async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    await hass.config_entries.async_reload(entry.entry_id)
+
+
 def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
     data = hass.data[DOMAIN][entry.entry_id]
     database: MealPlannerDatabase = data["database"]
@@ -167,39 +222,78 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
     api_key: str = data["api_key"]
     session = async_get_clientsession(hass)
 
+    async def search_and_cache(
+        query: str, force_refresh: bool = False
+    ) -> list[dict[str, Any]]:
+        cached = None
+        if not force_refresh:
+            cached = await hass.async_add_executor_job(
+                database.get_nutrition_search, query
+            )
+        if cached is not None:
+            return cached
+        try:
+            results = await search_nutrition_for_item(session, api_key, query)
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+            raise HomeAssistantError(
+                "USDA-Suche fehlgeschlagen. API-Schlüssel und Verbindung prüfen."
+            ) from None
+        if results:
+            await hass.async_add_executor_job(
+                database.cache_nutrition_search, query, results
+            )
+        return results
+
+    async def handle_search_ingredient(call: ServiceCall) -> None:
+        query = call.data["query"]
+        results = await search_and_cache(query, call.data["force_refresh"])
+        if not results:
+            raise HomeAssistantError(
+                f"USDA fand keine verwendbaren Nährwerte für „{query}“."
+            )
+        await coordinator.async_request_refresh()
+
     async def handle_add_meal(call: ServiceCall) -> None:
         ingredients = call.data["ingredients"]
         names = list(ingredients)
-        try:
-            nutrition_values = await asyncio.gather(
-                *(
-                    get_nutrition_for_item(session, api_key, name)
-                    for name in names
-                )
+        nutrition_values = []
+        for name, details in ingredients.items():
+            fdc_id = details.get("fdc_id")
+            if fdc_id is None:
+                matches = await search_and_cache(name)
+                if not matches:
+                    raise HomeAssistantError(
+                        f"USDA fand keine verwendbaren Nährwerte für „{name}“."
+                    )
+                selected = matches[0]
+                nutrition_values.append(selected["nutrition"])
+                details["fdc_id"] = selected["fdc_id"]
+                continue
+            cached = await hass.async_add_executor_job(
+                database.get_cached_nutrition, fdc_id
             )
-        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
-            raise HomeAssistantError(
-                "USDA-Abfrage fehlgeschlagen. API-Schlüssel und Internetverbindung prüfen."
-            ) from None
+            if cached is None:
+                raise HomeAssistantError(
+                    f"USDA-Auswahl für „{name}“ ist abgelaufen. Zutat erneut suchen."
+                )
+            nutrition_values.append(cached["nutrition"])
 
         enriched: dict[str, dict[str, Any]] = {}
         for name, details, nutrition in zip(
             names, ingredients.values(), nutrition_values, strict=True
         ):
-            if nutrition is None:
-                raise HomeAssistantError(
-                    f"USDA lieferte keine Nährwerte für „{name}“. "
-                    "Schreibweise prüfen; die Suche benötigt möglicherweise englische Namen."
-                )
             enriched[name] = {
-                **details,
+                "amount": details["amount"],
+                "unit": details["unit"],
                 "nutrition_per_100g": nutrition,
+                "usda_fdc_id": details["fdc_id"],
             }
 
         await hass.async_add_executor_job(
             database.add_meal,
             call.data["name"],
             call.data["meal_type"],
+            call.data["servings"],
             enriched,
         )
         await coordinator.async_request_refresh()
@@ -207,7 +301,21 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
     async def handle_generate_week_plan(call: ServiceCall) -> None:
         meals = await hass.async_add_executor_job(database.get_meals)
         start = monday_for(dt_util.now().date())
-        plan = generate_week_plan(meals, start)
+        recent_usage = await hass.async_add_executor_job(
+            database.get_recent_meal_usage, start.isoformat()
+        )
+        excluded = {
+            name.strip().casefold()
+            for name in coordinator.settings["excluded_ingredients"].split(",")
+            if name.strip()
+        }
+        plan = generate_week_plan(
+            meals,
+            start,
+            coordinator.settings["target_kcal"],
+            excluded,
+            recent_usage,
+        )
         if not plan:
             raise HomeAssistantError(
                 "Vor der Wochenplanung mindestens ein Mittag- oder Abendessen speichern."
@@ -234,4 +342,10 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
         "generate_shopping_list",
         handle_generate_shopping_list,
         schema=EMPTY_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "search_ingredient",
+        handle_search_ingredient,
+        schema=SEARCH_INGREDIENT_SCHEMA,
     )

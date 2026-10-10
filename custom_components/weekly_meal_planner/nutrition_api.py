@@ -13,25 +13,44 @@ USDA_SEARCH_URL = "https://api.nal.usda.gov/fdc/v1/foods/search"
 async def get_nutrition_for_item(
     session: aiohttp.ClientSession, api_key: str, item_name: str
 ) -> dict[str, float] | None:
-    """Return USDA nutrient values per 100 g for an ingredient."""
+    """Return the best usable USDA search result for an ingredient."""
+    results = await search_nutrition_for_item(session, api_key, item_name)
+    return results[0]["nutrition"] if results else None
+
+
+async def search_nutrition_for_item(
+    session: aiohttp.ClientSession, api_key: str, item_name: str
+) -> list[dict[str, Any]]:
+    """Return selectable USDA food matches with nutrients per 100 g."""
     timeout = aiohttp.ClientTimeout(total=15)
     async with session.get(
         USDA_SEARCH_URL,
-        params={"api_key": api_key, "query": item_name, "pageSize": 1},
+        params={"api_key": api_key, "query": item_name, "pageSize": 10},
         timeout=timeout,
     ) as response:
         response.raise_for_status()
         data = await response.json()
 
     if not isinstance(data, dict) or not isinstance(data.get("foods"), list):
-        return None
+        return []
+
+    results: list[dict[str, Any]] = []
     for food in data["foods"]:
-        if not isinstance(food, dict):
+        if not isinstance(food, dict) or not isinstance(food.get("fdcId"), int):
             continue
         nutrition = _nutrition_from_food(food)
-        if nutrition is not None:
-            return nutrition
-    return None
+        if nutrition is None:
+            continue
+        results.append(
+            {
+                "fdc_id": food["fdcId"],
+                "description": str(food.get("description", item_name)),
+                "nutrition": nutrition,
+            }
+        )
+        if len(results) == 5:
+            break
+    return results
 
 
 def _nutrition_from_food(food: dict[str, Any]) -> dict[str, float] | None:

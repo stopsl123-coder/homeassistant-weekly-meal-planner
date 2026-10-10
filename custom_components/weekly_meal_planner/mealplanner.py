@@ -5,8 +5,6 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Any
 
-WEEKLY_TARGET_KCAL = 14_000
-
 _MASS_UNITS = {
     "mg": 0.001,
     "g": 1.0,
@@ -31,13 +29,22 @@ def monday_for(day: date) -> date:
 
 
 def generate_week_plan(
-    meals: list[dict[str, Any]], week_start: date
+    meals: list[dict[str, Any]],
+    week_start: date,
+    target_kcal: int,
+    excluded_ingredients: set[str] | None = None,
+    recent_usage: dict[str, int] | None = None,
 ) -> dict[str, dict[str, str]]:
-    """Fill this week with available lunch and dinner recipes."""
+    """Fill this week while balancing target calories and recipe variety."""
+    excluded = {name.strip().casefold() for name in excluded_ingredients or set()}
     candidates = [
         meal
         for meal in meals
         if meal["meal_type"] in {"lunch", "dinner"}
+        and not any(
+            name.strip().casefold() in excluded
+            for name in meal["ingredients"]
+        )
     ]
     if not candidates:
         return {}
@@ -46,26 +53,54 @@ def generate_week_plan(
         meal_type: [meal for meal in candidates if meal["meal_type"] == meal_type]
         for meal_type in ("lunch", "dinner")
     }
-    uses_shared_pool = not by_type["lunch"] or not by_type["dinner"]
+    if not by_type["lunch"]:
+        by_type["lunch"] = candidates
+    if not by_type["dinner"]:
+        by_type["dinner"] = candidates
+
+    calories_by_name: dict[str, float | None] = {}
+    for meal in candidates:
+        calories, missing = calculate_meal_nutrition(
+            meal["ingredients"], servings=meal.get("servings", 1)
+        )
+        calories_by_name[meal["name"]] = None if missing else calories["calories"]
+    usage = dict(recent_usage or {})
     plan: dict[str, dict[str, str]] = {}
     for day_offset in range(7):
         day = (week_start + timedelta(days=day_offset)).isoformat()
-        day_meals: dict[str, str] = {}
-        for meal_type in ("lunch", "dinner"):
-            options = by_type[meal_type] or candidates
-            if options:
-                index = day_offset
-                if uses_shared_pool and meal_type == "dinner":
-                    index += 1
-                day_meals[meal_type] = options[index % len(options)]["name"]
-        plan[day] = day_meals
+        pairs = [
+            (lunch["name"], dinner["name"])
+            for lunch in by_type["lunch"]
+            for dinner in by_type["dinner"]
+            if lunch["name"] != dinner["name"] or len(candidates) == 1
+        ]
+        if not pairs:
+            pairs = [(meal["name"], meal["name"]) for meal in candidates]
+
+        def pair_score(pair: tuple[str, str]) -> tuple[float, int, str, str]:
+            lunch, dinner = pair
+            repeat_score = usage.get(lunch, 0) + usage.get(dinner, 0)
+            calories = calories_by_name.get(lunch)
+            dinner_calories = calories_by_name.get(dinner)
+            if calories is None or dinner_calories is None:
+                calorie_score = float(target_kcal)
+            else:
+                calorie_score = abs(
+                    calories + dinner_calories - target_kcal * 0.7
+                )
+            return calorie_score + repeat_score * 250, repeat_score, lunch, dinner
+
+        lunch_name, dinner_name = min(pairs, key=pair_score)
+        plan[day] = {"lunch": lunch_name, "dinner": dinner_name}
+        usage[lunch_name] = usage.get(lunch_name, 0) + 1
+        usage[dinner_name] = usage.get(dinner_name, 0) + 1
     return plan
 
 
 def calculate_meal_nutrition(
-    ingredients: dict[str, dict[str, Any]],
+    ingredients: dict[str, dict[str, Any]], servings: int = 1
 ) -> tuple[dict[str, float], list[str]]:
-    """Calculate nutrients when ingredient amounts have known gram weights."""
+    """Calculate nutrients per serving when ingredient amounts have gram weights."""
     totals = {"calories": 0.0, "protein": 0.0, "fat": 0.0, "carbs": 0.0}
     missing: list[str] = []
 
@@ -77,7 +112,7 @@ def calculate_meal_nutrition(
             missing.append(name)
             continue
 
-        grams = float(ingredient["amount"]) * grams_per_unit
+        grams = float(ingredient["amount"]) * grams_per_unit / max(servings, 1)
         if not all(
             isinstance(nutrition.get(key), (int, float))
             for key in totals
@@ -91,7 +126,9 @@ def calculate_meal_nutrition(
 
 
 def calculate_week_nutrition(
-    plan: dict[str, dict[str, str]], meals: list[dict[str, Any]]
+    plan: dict[str, dict[str, str]],
+    meals: list[dict[str, Any]],
+    target_kcal: int,
 ) -> dict[str, Any]:
     meals_by_name = {meal["name"]: meal for meal in meals}
     per_day: dict[str, float | None] = {}
@@ -111,7 +148,9 @@ def calculate_week_nutrition(
                 )
                 day_complete = False
                 continue
-            nutrients, missing = calculate_meal_nutrition(meal["ingredients"])
+            nutrients, missing = calculate_meal_nutrition(
+                meal["ingredients"], servings=meal.get("servings", 1)
+            )
             for ingredient in missing:
                 missing_nutrition.append(
                     {"day": day, "meal": meal_name, "ingredient": ingredient}
@@ -143,9 +182,9 @@ def calculate_week_nutrition(
             if week_complete
             else None
         ),
-        "week_target": WEEKLY_TARGET_KCAL,
+        "week_target": round(target_kcal * 0.7) * 7,
         "difference": (
-            round(week_totals["calories"] - WEEKLY_TARGET_KCAL, 2)
+            round(week_totals["calories"] - round(target_kcal * 0.7) * 7, 2)
             if week_complete
             else None
         ),
@@ -154,7 +193,9 @@ def calculate_week_nutrition(
 
 
 def generate_shopping_list(
-    plan: dict[str, dict[str, str]], meals: list[dict[str, Any]]
+    plan: dict[str, dict[str, str]],
+    meals: list[dict[str, Any]],
+    household_servings: int = 1,
 ) -> dict[str, dict[str, float | str]]:
     """Combine same-unit quantities and convert compatible units safely."""
     meals_by_name = {meal["name"]: meal for meal in meals}
@@ -187,7 +228,12 @@ def generate_shopping_list(
                         "unit": {"mass": "g", "volume": "ml"}.get(dimension, unit),
                     },
                 )
-                group["amount"] += float(ingredient["amount"]) * (factor or 1.0)
+                group["amount"] += (
+                    float(ingredient["amount"])
+                    / max(int(meal.get("servings", 1)), 1)
+                    * household_servings
+                    * (factor or 1.0)
+                )
 
     shopping_list: dict[str, dict[str, float | str]] = {}
     used_names: set[str] = set()
@@ -207,10 +253,15 @@ def generate_shopping_list(
 
 
 def build_dashboard_data(
-    plan: dict[str, dict[str, str]], meals: list[dict[str, Any]]
+    plan: dict[str, dict[str, str]],
+    meals: list[dict[str, Any]],
+    household_servings: int,
+    target_kcal: int,
+    food_search: dict[str, Any],
 ) -> dict[str, Any]:
     return {
         "plan": plan,
-        "shopping_list": generate_shopping_list(plan, meals),
-        "nutrition": calculate_week_nutrition(plan, meals),
+        "shopping_list": generate_shopping_list(plan, meals, household_servings),
+        "nutrition": calculate_week_nutrition(plan, meals, target_kcal),
+        "food_search": food_search,
     }
