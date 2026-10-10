@@ -105,35 +105,69 @@ class WeeklyMealPlannerCard extends HTMLElement {
   }
 
   updateNutritionSearchResults(search) {
-    search ??=
+    const latestSearch =
+      search ??
       this._hass?.states["sensor.weekly_meal_planner_shopping_list"]
         ?.attributes.latest_nutrition_search;
-    if (!search?.query || !Array.isArray(search.results)) return;
 
     for (const row of this.querySelectorAll(".ingredient-row")) {
       const input = row.querySelector('input[aria-label="Zutat"]');
-      const select = row.querySelector(".usda-match");
-      if (input.value.trim().toLocaleLowerCase() !== search.query.toLocaleLowerCase()) {
-        select.replaceChildren();
-        select.value = "";
-        select.hidden = true;
+      const query = input.value.trim().toLocaleLowerCase();
+      const rowSearch =
+        row._nutritionSearch?.query?.toLocaleLowerCase() === query
+          ? row._nutritionSearch
+          : latestSearch?.query?.toLocaleLowerCase() === query
+            ? latestSearch
+            : undefined;
+
+      if (!rowSearch || !Array.isArray(rowSearch.results)) {
+        if (row._nutritionSearch) {
+          row._nutritionSearch = undefined;
+          const select = row.querySelector(".usda-match");
+          select.replaceChildren();
+          select.value = "";
+          select.hidden = true;
+        }
         continue;
       }
-      select.replaceChildren();
-      const placeholder = document.createElement("option");
-      placeholder.value = "";
-      placeholder.textContent = "Treffer auswählen";
-      select.appendChild(placeholder);
-      for (const result of search.results) {
-        const option = document.createElement("option");
-        option.value = String(result.fdc_id);
-        option.textContent = `${result.description} · ${Math.round(result.nutrition.calories)} kcal/100 g`;
-        select.appendChild(option);
+
+      if (search && search.query?.toLocaleLowerCase() === query) {
+        row._nutritionSearch = search;
+      } else if (!row._nutritionSearch) {
+        row._nutritionSearch = rowSearch;
       }
-      select.hidden = search.results.length === 0;
-      if (search.results.length === 1) {
-        select.value = String(search.results[0].fdc_id);
-      }
+      this.renderNutritionMatches(row, row._nutritionSearch);
+    }
+  }
+
+  renderNutritionMatches(row, search) {
+    const select = row.querySelector(".usda-match");
+    const unit = row.querySelector('select[aria-label="Einheit"]').value;
+    const weight = Number(
+      row.querySelector('input[aria-label="Gewicht pro Stück in Gramm"]').value,
+    );
+    const selectedValue = select.value;
+    select.replaceChildren();
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "Treffer auswählen";
+    select.appendChild(placeholder);
+    for (const result of search.results) {
+      const option = document.createElement("option");
+      option.value = String(result.fdc_id);
+      const caloriesPer100g = Number(result.nutrition.calories);
+      const nutritionLabel =
+        unit === "Stück" && Number.isFinite(weight) && weight > 0
+          ? `${Math.round((caloriesPer100g * weight) / 100)} kcal je Stück (${weight} g)`
+          : `${Math.round(caloriesPer100g)} kcal je 100 g`;
+      option.textContent = `${search.query} · USDA: ${result.description} · ${nutritionLabel}`;
+      select.appendChild(option);
+    }
+    select.hidden = search.results.length === 0;
+    if (search.results.some((result) => String(result.fdc_id) === selectedValue)) {
+      select.value = selectedValue;
+    } else if (search.results.length === 1) {
+      select.value = String(search.results[0].fdc_id);
     }
   }
 
@@ -147,7 +181,9 @@ class WeeklyMealPlannerCard extends HTMLElement {
         .meal-form { display: grid; gap: 8px; }
         .ingredient-row { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 8px; margin-bottom: 8px; }
         .ingredient-row input, .ingredient-row select { min-width: 0; }
-        .ingredient-row button, .ingredient-row .usda-match { grid-column: 1 / -1; }
+        .ingredient-row button, .ingredient-row .piece-weight, .ingredient-row .usda-match { grid-column: 1 / -1; }
+        .piece-weight { display: none; gap: 4px; }
+        .piece-weight.visible { display: grid; }
         .week-plan { display: grid; gap: 8px; margin-bottom: 16px; }
         .week-day { padding: 8px; border: 1px solid var(--divider-color); border-radius: 6px; }
         .week-day h4 { margin: 0 0 4px; }
@@ -169,6 +205,7 @@ class WeeklyMealPlannerCard extends HTMLElement {
               <option value="breakfast">Frühstück</option>
             </select>
             <div id="ingredients_container"></div>
+            <p>USDA-Treffernamen können Englisch sein. Nährwerte gelten je 100 g; für „Stück“ Gewicht pro Stück angeben.</p>
             <button id="add_ingredient" type="button">Zutat hinzufügen</button>
             <button id="save_meal" type="button">Gericht speichern</button>
           </div>
@@ -211,6 +248,20 @@ class WeeklyMealPlannerCard extends HTMLElement {
         unit.appendChild(option);
       }
 
+      const pieceWeight = document.createElement("label");
+      pieceWeight.className = "piece-weight";
+      pieceWeight.textContent = "Gewicht pro Stück (g)";
+      const weightPerUnit = document.createElement("input");
+      weightPerUnit.type = "number";
+      weightPerUnit.min = "0.001";
+      weightPerUnit.step = "any";
+      weightPerUnit.placeholder = "z. B. 60";
+      weightPerUnit.setAttribute(
+        "aria-label",
+        "Gewicht pro Stück in Gramm",
+      );
+      pieceWeight.appendChild(weightPerUnit);
+
       const search = document.createElement("button");
       search.type = "button";
       search.textContent = "USDA-Treffer suchen";
@@ -223,6 +274,20 @@ class WeeklyMealPlannerCard extends HTMLElement {
         matches.replaceChildren();
         matches.value = "";
         matches.hidden = true;
+        row._nutritionSearch = undefined;
+      });
+      unit.addEventListener("change", () => {
+        const isPiece = unit.value === "Stück";
+        pieceWeight.classList.toggle("visible", isPiece);
+        weightPerUnit.required = isPiece;
+        if (row._nutritionSearch) {
+          this.renderNutritionMatches(row, row._nutritionSearch);
+        }
+      });
+      weightPerUnit.addEventListener("input", () => {
+        if (row._nutritionSearch) {
+          this.renderNutritionMatches(row, row._nutritionSearch);
+        }
       });
 
       search.onclick = async () => {
@@ -259,7 +324,7 @@ class WeeklyMealPlannerCard extends HTMLElement {
         }
       };
 
-      row.append(name, amount, unit, search, matches);
+      row.append(name, amount, unit, pieceWeight, search, matches);
       container.appendChild(row);
     };
 
@@ -278,6 +343,9 @@ class WeeklyMealPlannerCard extends HTMLElement {
         const item = row.querySelector('input[aria-label="Zutat"]').value.trim();
         const amount = Number(row.querySelector('input[aria-label="Menge"]').value);
         const unit = row.querySelector("select").value;
+        const weightPerUnit = row.querySelector(
+          'input[aria-label="Gewicht pro Stück in Gramm"]',
+        );
         const selectedMatch = row.querySelector(".usda-match");
         if (!item || !Number.isFinite(amount) || amount <= 0) {
           setStatus("Bitte Gericht und gültige Zutatenmengen eingeben.", true);
@@ -291,10 +359,21 @@ class WeeklyMealPlannerCard extends HTMLElement {
           setStatus(`Bitte für „${item}“ USDA-Treffer suchen und auswählen.`, true);
           return;
         }
+        if (
+          unit === "Stück" &&
+          (!Number.isFinite(Number(weightPerUnit.value)) ||
+            Number(weightPerUnit.value) <= 0)
+        ) {
+          setStatus(`Bitte Gewicht pro Stück für „${item}“ in Gramm eingeben.`, true);
+          return;
+        }
         ingredients[item] = {
           amount,
           unit,
           fdc_id: Number(selectedMatch.value),
+          ...(unit === "Stück"
+            ? { weight_per_unit_g: Number(weightPerUnit.value) }
+            : {}),
         };
       }
 

@@ -248,6 +248,26 @@ class MealPlannerLogicTests(unittest.TestCase):
         self.assertEqual(nutrition["calories"], 100)
         self.assertEqual(shopping["Rice"], {"amount": 200.0, "unit": "g"})
 
+    def test_piece_ingredients_use_entered_weight_for_nutrition(self) -> None:
+        ingredients = {
+            "Ei": {
+                "amount": 2,
+                "unit": "Stück",
+                "weight_per_unit_g": 60,
+                "nutrition_per_100g": {
+                    "calories": 150,
+                    "protein": 12,
+                    "fat": 10,
+                    "carbs": 1,
+                },
+            }
+        }
+
+        totals, missing = calculate_meal_nutrition(ingredients)
+
+        self.assertEqual(totals["calories"], 180)
+        self.assertEqual(missing, [])
+
     def test_shopping_list_converts_units_without_mixing_dimensions(self) -> None:
         meals = [
             {

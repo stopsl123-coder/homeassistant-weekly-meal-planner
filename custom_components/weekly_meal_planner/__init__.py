@@ -116,6 +116,7 @@ def _validate_ingredients(value: Any) -> dict[str, dict[str, Any]]:
         amount = details.get("amount")
         unit = details.get("unit")
         fdc_id = details.get("fdc_id")
+        weight_per_unit_g = details.get("weight_per_unit_g")
         if (
             isinstance(amount, bool)
             or not isinstance(amount, (int, float))
@@ -129,10 +130,24 @@ def _validate_ingredients(value: Any) -> dict[str, dict[str, Any]]:
             isinstance(fdc_id, bool) or not isinstance(fdc_id, int) or fdc_id <= 0
         ):
             raise vol.Invalid(f"Ingredient '{name}' has an invalid USDA food ID.")
+        if weight_per_unit_g is not None and (
+            isinstance(weight_per_unit_g, bool)
+            or not isinstance(weight_per_unit_g, (int, float))
+            or not math.isfinite(weight_per_unit_g)
+            or weight_per_unit_g <= 0
+        ):
+            raise vol.Invalid(
+                f"Ingredient '{name}' must have a positive weight per unit in grams."
+            )
         validated[normalized_name] = {
             "amount": float(amount),
             "unit": unit.strip(),
             **({"fdc_id": fdc_id} if fdc_id is not None else {}),
+            **(
+                {"weight_per_unit_g": float(weight_per_unit_g)}
+                if weight_per_unit_g is not None
+                else {}
+            ),
         }
     return validated
 
@@ -286,6 +301,11 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
             enriched[name] = {
                 "amount": details["amount"],
                 "unit": details["unit"],
+                **(
+                    {"weight_per_unit_g": details["weight_per_unit_g"]}
+                    if "weight_per_unit_g" in details
+                    else {}
+                ),
                 "nutrition_per_100g": nutrition,
                 "usda_fdc_id": details["fdc_id"],
             }

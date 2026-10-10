@@ -19,6 +19,10 @@ add_meal:
         Reis:
           amount: 150
           unit: g
+        Ei:
+          amount: 2
+          unit: Stück
+          weight_per_unit_g: 60
 
 generate_shopping_list:
   description: Aktualisiert Einkaufsliste und Sensoren für den aktuellen Wochenplan.

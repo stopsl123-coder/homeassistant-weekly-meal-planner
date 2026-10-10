@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from datetime import date, timedelta
 from typing import Any
 
@@ -107,8 +108,19 @@ def calculate_meal_nutrition(
     for name, ingredient in ingredients.items():
         unit = str(ingredient["unit"]).strip().casefold()
         grams_per_unit = _MASS_UNITS.get(unit)
+        if grams_per_unit is None:
+            weight_per_unit_g = ingredient.get("weight_per_unit_g")
+            if (
+                isinstance(weight_per_unit_g, bool)
+                or not isinstance(weight_per_unit_g, (int, float))
+                or not math.isfinite(weight_per_unit_g)
+                or weight_per_unit_g <= 0
+            ):
+                missing.append(name)
+                continue
+            grams_per_unit = float(weight_per_unit_g)
         nutrition = ingredient.get("nutrition_per_100g")
-        if grams_per_unit is None or not isinstance(nutrition, dict):
+        if not isinstance(nutrition, dict):
             missing.append(name)
             continue
 

@@ -17,8 +17,9 @@ Abendessen, Berechnen von Nährwerten und Erstellen einer Einkaufsliste.
 Beim Speichern werden Zutatenbezeichnungen an USDA FoodData Central gesendet.
 Ein gültiger API-Schlüssel und Internetzugang sind dafür erforderlich.
 Nährwertsummen bleiben unbekannt, wenn Zutatenmenge nicht in Gewicht
-umgerechnet werden kann oder Nährwerte fehlen. Volumen wird nicht pauschal mit
-Gewicht gleichgesetzt.
+umgerechnet werden kann oder Nährwerte fehlen. Bei Stück-Zutaten kann Gewicht
+pro Stück angegeben werden. Volumen wird nicht pauschal mit Gewicht
+gleichgesetzt.
 
 ## Installation
 

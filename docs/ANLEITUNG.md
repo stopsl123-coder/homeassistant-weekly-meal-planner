@@ -75,6 +75,8 @@ gespeichert werden, erscheinen aber nicht im automatisch erstellten Wochenplan.
 4. Wähle **Mittagessen**, **Abendessen** oder **Frühstück**.
 5. Klicke auf **Zutat hinzufügen**.
 6. Trage Zutat, Menge und Einheit ein. Menge muss größer als null sein.
+   Wählst du **Stück**, erscheint zusätzlich Feld **Gewicht pro Stück (g)**.
+   Trage dort Gewicht eines einzelnen Stücks ein, zum Beispiel `60` für Ei.
 7. Klicke in derselben Zeile auf **USDA-Treffer suchen**.
 8. Wähle im angezeigten Auswahlfeld den passenden USDA-Eintrag. Wiederhole
    Schritte 5 bis 8 für jede Zutat.
@@ -95,14 +97,20 @@ Einkaufsmengen auf die eingestellte Haushaltsgröße.
 USDA-Suchergebnisse können englische Bezeichnungen verwenden. Prüfe Beschreibung
 und Nährwerte pro 100 g im Auswahlfeld, bevor du Treffer auswählst. Wenn du
 Zutatennamen nach der Suche änderst, suche Treffer erneut.
+Bei Einheit **Stück** zeigt Auswahlkarte zusätzlich geschätzte kcal pro Stück,
+basierend auf eingegebenem Gewicht. Ohne dieses Gewicht kann Integration
+Nährwerte dieser Zutat nicht berechnen. Die USDA-Datenbank liefert Angaben pro
+100 g; Home Assistant übersetzt originale USDA-Bezeichnungen nicht automatisch.
 
 ### Hinweis zu Nährwerten und Einheiten
 
-Nährwerte werden zuverlässig nur aus Zutaten berechnet, deren Menge als Gewicht
-vorliegt, beispielsweise `g`, `kg` oder `mg`. Volumen wie `ml` und Stückangaben
-wie `Stück` werden nicht automatisch in Gramm umgerechnet. Enthält ein Rezept
-solche Mengen oder fehlen USDA-Nährwerte, können Tages- und Wochensummen als
-nicht verfügbar erscheinen. Einkaufsliste kann die Mengen trotzdem anzeigen.
+Nährwerte werden zuverlässig aus Zutaten berechnet, deren Menge als Gewicht
+vorliegt, beispielsweise `g`, `kg` oder `mg`. Bei **Stück** musst du zusätzlich
+Gewicht eines Stücks angeben, damit Integration USDA-Werte pro 100 g auf
+Stückzahl umrechnen kann. Volumen wie `ml` wird nicht pauschal in Gramm
+umgerechnet. Fehlen erforderliche Gewichte oder USDA-Nährwerte, können Tages-
+und Wochensummen als nicht verfügbar erscheinen. Einkaufsliste kann Mengen
+trotzdem anzeigen.
 
 ## 5. Weitere Rezepte und Änderungen
 

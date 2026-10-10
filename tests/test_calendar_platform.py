@@ -95,5 +95,27 @@ async def test_ingredient_search_returns_results_to_service_caller(hass) -> None
     )
 
     assert response == {"query": "egg", "results": matches}
+    await hass.services.async_call(
+        DOMAIN,
+        "add_meal",
+        {
+            "name": "Rührei",
+            "meal_type": "breakfast",
+            "servings": 1,
+            "ingredients": {
+                "Ei": {
+                    "amount": 2,
+                    "unit": "Stück",
+                    "fdc_id": 123,
+                    "weight_per_unit_g": 60,
+                }
+            },
+        },
+        blocking=True,
+    )
+    stored_meal = await hass.async_add_executor_job(database.get_meal, "Rührei")
+    assert stored_meal["ingredients"]["Ei"]["weight_per_unit_g"] == 60
+    assert stored_meal["ingredients"]["Ei"]["usda_fdc_id"] == 123
+
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
