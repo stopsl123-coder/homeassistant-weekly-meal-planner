@@ -90,3 +90,16 @@ set_planned_meal:
     meal_name:
       description: Name eines gespeicherten Gerichts desselben Mahlzeitentyps
       example: "Gemüsesuppe"
+
+set_shopping_item:
+  description: Markiert einen Eintrag der Einkaufsliste als besorgt oder offen.
+  fields:
+    week_start:
+      description: Montag der aktuellen oder nächsten Woche im Format YYYY-MM-DD
+      example: "2026-10-12"
+    item_name:
+      description: Name des Einkaufslisteneintrags
+      example: "Haferflocken"
+    checked:
+      description: true, wenn Zutat besorgt wurde; false zum Zurücksetzen
+      example: true

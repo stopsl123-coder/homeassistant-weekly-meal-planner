@@ -66,6 +66,7 @@ class ShoppingListSensor(CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         return {
             "items": self.coordinator.data["shopping_list"],
+            "checked": self.coordinator.data["shopping_checked"],
             "latest_nutrition_search": self.coordinator.data["food_search"],
         }
 

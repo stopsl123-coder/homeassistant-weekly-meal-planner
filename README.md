@@ -20,8 +20,8 @@ berechnet.
 
 | Wochenplan | Rezepte | Einkaufsliste |
 | --- | --- | --- |
-| Sieben Tage mit Frühstück, Mittag- und Abendessen | Rezepte mit Portionen, Zutaten und Nährwerten speichern | Zutaten kompatibler Einheiten zusammenfassen |
-| Zwischen aktueller und nächster Woche wechseln | Gerichte je Mahlzeit auswählen oder automatisch planen | Liste für ausgewählte Woche direkt in Karte sehen |
+| Sieben Tage mit Frühstück, Mittag- und Abendessen | Rezepte mit Portionen, Zutaten und Nährwerten speichern | Zutaten kompatibler Einheiten zusammenfassen und beim Einkauf abhaken |
+| Zwischen aktueller und nächster Woche wechseln | Gerichte je Mahlzeit auswählen oder automatisch planen | Besorgungsfortschritt pro Gericht in Grün sehen |
 | Tageskalorien und native Kalender-Entity | Gerichte bearbeiten oder löschen | Sensoren für Dashboard und Automationen |
 
 ## Installation

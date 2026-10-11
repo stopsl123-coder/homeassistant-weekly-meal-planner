@@ -170,6 +170,11 @@ Die Navigation ist auf aktuelle und nächste Woche begrenzt. So kannst du den
 kommenden Einkauf planen, ohne Kalender und Sensoren von der aktuellen Woche
 wegzuschalten.
 
+Hake Zutaten in der Einkaufsliste beim Einkaufen ab. Der Besorgungsstatus bleibt
+pro Woche gespeichert. Geplante Gerichte färben sich abhängig vom Anteil bereits
+besorgter Zutaten grün; wenn sich der Wochenplan ändert, werden nicht mehr
+benötigte Einkaufsmarkierungen entfernt.
+
 Über die Gerichtsauswahl kannst du ein gespeichertes Gericht auch löschen.
 Nach Bestätigung wird es aus der Rezeptdatenbank und allen Wochenplan-Tagen
 entfernt.
@@ -266,6 +271,8 @@ Weitere Aktionen findest du ebenfalls unter **Entwicklerwerkzeuge > Aktionen**:
   nach Name suchen.
 - `weekly_meal_planner.get_meal_details`: Zubereitung und Herkunft eines
   gespeicherten Rezepts abrufen.
+- `weekly_meal_planner.set_shopping_item`: Einkaufslisteneintrag einer Woche
+  als besorgt markieren oder Haken entfernen.
 
 ## 9. Einkaufsliste und Sensoren
 

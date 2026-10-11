@@ -80,6 +80,17 @@ class MealPlannerDatabase:
             )
             connection.execute(
                 """
+                CREATE TABLE IF NOT EXISTS shopping_progress (
+                    week_start TEXT NOT NULL,
+                    item_name TEXT NOT NULL,
+                    amount REAL NOT NULL,
+                    unit TEXT NOT NULL,
+                    PRIMARY KEY (week_start, item_name)
+                )
+                """
+            )
+            connection.execute(
+                """
                 CREATE TABLE IF NOT EXISTS nutrition_cache (
                     fdc_id INTEGER PRIMARY KEY,
                     description TEXT NOT NULL,
@@ -452,6 +463,80 @@ class MealPlannerDatabase:
         for row in rows:
             plan.setdefault(row["day"], {})[row["meal_type"]] = row["meal_name"]
         return plan
+
+    def sync_shopping_progress(
+        self, week_start: str, items: dict[str, dict[str, Any]]
+    ) -> dict[str, bool]:
+        with self._connect() as connection:
+            if items:
+                placeholders = ",".join("?" for _ in items)
+                connection.execute(
+                    f"DELETE FROM shopping_progress WHERE week_start = ? "
+                    f"AND item_name NOT IN ({placeholders})",
+                    (week_start, *sorted(items)),
+                )
+            else:
+                connection.execute(
+                    "DELETE FROM shopping_progress WHERE week_start = ?",
+                    (week_start,),
+                )
+            rows = connection.execute(
+                """
+                SELECT item_name, amount, unit FROM shopping_progress
+                WHERE week_start = ?
+                """,
+                (week_start,),
+            ).fetchall()
+            for row in rows:
+                current = items[row["item_name"]]
+                if (
+                    row["amount"] != current["amount"]
+                    or row["unit"] != current["unit"]
+                ):
+                    connection.execute(
+                        """
+                        DELETE FROM shopping_progress
+                        WHERE week_start = ? AND item_name = ?
+                        """,
+                        (week_start, row["item_name"]),
+                    )
+        return {
+            row["item_name"]: True
+            for row in rows
+            if row["item_name"] in items
+            and row["amount"] == items[row["item_name"]]["amount"]
+            and row["unit"] == items[row["item_name"]]["unit"]
+        }
+
+    def set_shopping_item(
+        self,
+        week_start: str,
+        item_name: str,
+        checked: bool,
+        amount: float,
+        unit: str,
+    ) -> None:
+        with self._connect() as connection:
+            if checked:
+                connection.execute(
+                    """
+                    INSERT INTO shopping_progress
+                        (week_start, item_name, amount, unit)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(week_start, item_name) DO UPDATE SET
+                        amount = excluded.amount,
+                        unit = excluded.unit
+                    """,
+                    (week_start, item_name, amount, unit),
+                )
+            else:
+                connection.execute(
+                    """
+                    DELETE FROM shopping_progress
+                    WHERE week_start = ? AND item_name = ?
+                    """,
+                    (week_start, item_name),
+                )
 
     def get_recent_meal_usage(self, week_start: str) -> dict[str, int]:
         with self._connect() as connection:

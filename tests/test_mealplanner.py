@@ -214,6 +214,49 @@ class MealPlannerDatabaseTests(unittest.TestCase):
             },
         )
 
+    def test_shopping_progress_is_saved_per_week_and_pruned(self) -> None:
+        items = {
+            "Beans": {"amount": 200.0, "unit": "g"},
+            "Rice": {"amount": 100.0, "unit": "g"},
+        }
+        self.database.set_shopping_item(
+            "2026-10-05", "Beans", True, 200.0, "g"
+        )
+        self.database.set_shopping_item(
+            "2026-10-12", "Beans", True, 200.0, "g"
+        )
+
+        self.assertEqual(
+            self.database.sync_shopping_progress("2026-10-05", items),
+            {"Beans": True},
+        )
+        changed_items = {
+            "Beans": {"amount": 250.0, "unit": "g"},
+            "Rice": {"amount": 100.0, "unit": "g"},
+        }
+        self.assertEqual(
+            self.database.sync_shopping_progress("2026-10-05", changed_items),
+            {},
+        )
+        self.database.set_shopping_item(
+            "2026-10-05", "Beans", False, 250.0, "g"
+        )
+
+        self.assertEqual(
+            self.database.sync_shopping_progress("2026-10-05", changed_items),
+            {},
+        )
+        self.assertEqual(
+            self.database.sync_shopping_progress(
+                "2026-10-12", {"Beans": items["Beans"]}
+            ),
+            {"Beans": True},
+        )
+        self.assertEqual(
+            self.database.sync_shopping_progress("2026-10-12", {}),
+            {},
+        )
+
     def test_legacy_database_adds_servings_without_losing_recipe_data(self) -> None:
         legacy_path = str(Path(self.temp_dir.name) / "legacy.db")
         connection = sqlite3.connect(legacy_path)

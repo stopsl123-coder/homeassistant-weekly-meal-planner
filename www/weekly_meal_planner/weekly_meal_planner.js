@@ -1,3 +1,14 @@
+function normalizeShoppingUnit(unit) {
+  const normalized = String(unit || "").trim().toLocaleLowerCase();
+  if (
+    ["mg", "g", "gram", "grams", "kg", "lb", "lbs", "oz"].includes(normalized)
+  ) {
+    return "g";
+  }
+  if (["ml", "l", "liter", "litre"].includes(normalized)) return "ml";
+  return normalized;
+}
+
 class WeeklyMealPlannerCard extends HTMLElement {
   setConfig(config) {
     this.config = config;
@@ -5,6 +16,19 @@ class WeeklyMealPlannerCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+    const shoppingState =
+      hass.states["sensor.weekly_meal_planner_shopping_list"];
+    if (
+      shoppingState &&
+      shoppingState.last_updated !== this._shoppingStateLastUpdated
+    ) {
+      this._shoppingStateLastUpdated = shoppingState.last_updated;
+      this._shoppingOverrides ||= new Map();
+      this._shoppingOverrides.set(
+        this._currentWeekStart(),
+        shoppingState.attributes.checked || {},
+      );
+    }
     this.subscribeToNutritionSearchUpdates().catch((error) => {
       console.error("Unable to subscribe to USDA search updates", error);
     });
@@ -120,6 +144,11 @@ class WeeklyMealPlannerCard extends HTMLElement {
       if (!this._weekData) {
         throw new Error("Wochenplan konnte nicht geladen werden.");
       }
+      this._shoppingOverrides ||= new Map();
+      this._shoppingOverrides.set(
+        weekStart,
+        this._weekData.shopping_checked || {},
+      );
       this.updateDashboard();
       return true;
     } catch (error) {
@@ -525,6 +554,17 @@ class WeeklyMealPlannerCard extends HTMLElement {
     const dailyCalories =
       weekData.per_day || weekData.nutrition?.per_day || {};
     const days = weekData.week_days || Object.keys(plan);
+    const shoppingList =
+      selectedWeek === currentWeek
+        ? this._hass?.states["sensor.weekly_meal_planner_shopping_list"]?.attributes.items
+        : weekData.shopping_list;
+    const shoppingChecked =
+      this._shoppingOverrides?.get(selectedWeek) ||
+      (selectedWeek === currentWeek
+        ? this._hass?.states["sensor.weekly_meal_planner_shopping_list"]
+            ?.attributes.checked
+        : weekData.shopping_checked) ||
+      {};
     const container = this.querySelector("#week_plan");
     if (!container) return;
 
@@ -611,6 +651,37 @@ class WeeklyMealPlannerCard extends HTMLElement {
         title.textContent = recipeName || "+ Gericht auswählen";
         tile.append(typeLabel, title);
         if (recipeName) {
+          const recipeIngredients = Object.entries(recipe?.ingredients || {});
+          if (recipeIngredients.length) {
+            let purchased = 0;
+            for (const [ingredientName, ingredient] of recipeIngredients) {
+              const normalizedName = ingredientName.trim().toLocaleLowerCase();
+              const matchingItem = Object.entries(shoppingList || {}).find(
+                ([itemName, details]) => {
+                  const normalizedItem = itemName.trim().toLocaleLowerCase();
+                  return (
+                    (normalizedItem === normalizedName ||
+                      normalizedItem.startsWith(`${normalizedName} (`)) &&
+                    normalizeShoppingUnit(details.unit) ===
+                      normalizeShoppingUnit(ingredient.unit)
+                  );
+                },
+              );
+              if (matchingItem && shoppingChecked[matchingItem[0]]) purchased += 1;
+            }
+            const progress = Math.round(
+              (purchased / recipeIngredients.length) * 100,
+            );
+            tile.style.setProperty("--shopping-progress", `${progress}%`);
+            tile.classList.toggle("has-shopping-progress", progress > 0);
+            const progressLabel = document.createElement("small");
+            progressLabel.textContent = `Einkauf: ${purchased}/${recipeIngredients.length} Zutaten`;
+            tile.appendChild(progressLabel);
+            tile.setAttribute(
+              "aria-label",
+              `${tile.getAttribute("aria-label")}, Einkauf ${purchased} von ${recipeIngredients.length} Zutaten`,
+            );
+          }
           const calories = document.createElement("small");
           calories.textContent =
             recipe?.calories == null
@@ -625,14 +696,39 @@ class WeeklyMealPlannerCard extends HTMLElement {
       }
       container.appendChild(section);
     }
-    const shoppingList =
-      selectedWeek === currentWeek
-        ? this._hass?.states["sensor.weekly_meal_planner_shopping_list"]?.attributes.items
-        : weekData.shopping_list;
-    this.renderShoppingList(shoppingList || {});
+    this.renderShoppingList(shoppingList || {}, shoppingChecked, selectedWeek);
   }
 
-  renderShoppingList(items) {
+  async updateShoppingItem(weekStart, itemName, checked, checkbox) {
+    checkbox.disabled = true;
+    try {
+      const result = await this._hass.callService(
+        "weekly_meal_planner",
+        "set_shopping_item",
+        { week_start: weekStart, item_name: itemName, checked },
+        undefined,
+        false,
+        true,
+      );
+      this._shoppingOverrides ||= new Map();
+      this._shoppingOverrides.set(
+        weekStart,
+        result?.response?.shopping_checked || {},
+      );
+      this.updateDashboard();
+    } catch (error) {
+      checkbox.checked = !checked;
+      checkbox.closest("li")?.classList.toggle("is-checked", checkbox.checked);
+      this.setPlanStatus(
+        error.message || "Einkauf konnte nicht gespeichert werden.",
+        true,
+      );
+    } finally {
+      checkbox.disabled = false;
+    }
+  }
+
+  renderShoppingList(items, checked, weekStart) {
     const list = this.querySelector("#shopping_items");
     const empty = this.querySelector("#shopping_empty");
     list.replaceChildren();
@@ -645,11 +741,20 @@ class WeeklyMealPlannerCard extends HTMLElement {
       : "Für diese Woche sind noch keine Gerichte eingeplant.";
     for (const [name, details] of entries) {
       const item = document.createElement("li");
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = Boolean(checked[name]);
+      checkbox.setAttribute("aria-label", `${name} als besorgt markieren`);
+      checkbox.addEventListener("change", () =>
+        this.updateShoppingItem(weekStart, name, checkbox.checked, checkbox),
+      );
       const label = document.createElement("span");
       label.textContent = name;
+      label.className = "shopping-item-name";
       const amount = document.createElement("strong");
       amount.textContent = `${Number(details.amount).toLocaleString("de-DE")} ${details.unit}`;
-      item.append(label, amount);
+      item.classList.toggle("is-checked", checkbox.checked);
+      item.append(checkbox, label, amount);
       list.appendChild(item);
     }
   }
@@ -769,9 +874,13 @@ class WeeklyMealPlannerCard extends HTMLElement {
         .shopping-preview header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
         .shopping-preview h3 { margin: 0; font-size: 1rem; }
         .shopping-preview ul { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 18px; margin: 0; padding: 0; list-style: none; }
-        .shopping-preview li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--divider-color); font-size: .88rem; }
+        .shopping-preview li { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--divider-color); font-size: .88rem; }
+        .shopping-preview li input { accent-color: var(--success-color, #43a047); }
+        .shopping-item-name { flex: 1; }
+        .shopping-preview li.is-checked .shopping-item-name { color: var(--secondary-text-color); text-decoration: line-through; }
         .shopping-empty { color: var(--secondary-text-color); font-size: .88rem; }
         .meal-tile { display: grid; gap: 7px; width: 100%; min-height: 88px; margin-top: 8px; padding: 10px 9px; appearance: none; border: 1px solid var(--divider-color); border-radius: 13px; background: var(--ha-card-background, var(--card-background-color)); color: var(--primary-text-color); text-align: left; white-space: normal; overflow-wrap: anywhere; cursor: pointer; transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+        .meal-tile.has-shopping-progress { background: linear-gradient(90deg, rgba(67, 160, 71, .28) 0%, rgba(67, 160, 71, .28) var(--shopping-progress), var(--ha-card-background, var(--card-background-color)) var(--shopping-progress), var(--ha-card-background, var(--card-background-color)) 100%); }
         .meal-tile:hover { transform: translateY(-2px); border-color: var(--primary-color); box-shadow: 0 7px 18px rgba(0, 0, 0, .1); }
         .meal-tile:focus-visible, .planner-button:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
         .meal-tile strong { color: var(--secondary-text-color); font-size: .65rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }

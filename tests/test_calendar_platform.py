@@ -439,3 +439,50 @@ async def test_add_meal_saves_bls_nutrition_and_recipe_details(hass) -> None:
 
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
+
+
+@pytest.mark.asyncio
+async def test_shopping_item_can_be_checked_and_unchecked(hass) -> None:
+    entry = MockConfigEntry(domain=DOMAIN, data={"api_key": ""})
+    entry.add_to_hass(hass)
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    coordinator: MealPlannerCoordinator = hass.data[DOMAIN][entry.entry_id][
+        "coordinator"
+    ]
+    database = coordinator.database
+    week_start = monday_for(dt_util.now().date()).isoformat()
+    await hass.async_add_executor_job(
+        database.add_meal,
+        "Bohnensalat",
+        "lunch",
+        1,
+        {"Bohnen": {"amount": 200, "unit": "g"}},
+    )
+    await hass.async_add_executor_job(
+        database.replace_week_plan,
+        week_start,
+        {week_start: {"lunch": "Bohnensalat"}},
+    )
+
+    response = await hass.services.async_call(
+        DOMAIN,
+        "set_shopping_item",
+        {"week_start": week_start, "item_name": "Bohnen", "checked": True},
+        blocking=True,
+        return_response=True,
+    )
+    assert response["shopping_checked"] == {"Bohnen": True}
+
+    response = await hass.services.async_call(
+        DOMAIN,
+        "set_shopping_item",
+        {"week_start": week_start, "item_name": "Bohnen", "checked": False},
+        blocking=True,
+        return_response=True,
+    )
+    assert response["shopping_checked"] == {}
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()

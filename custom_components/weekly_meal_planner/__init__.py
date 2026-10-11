@@ -44,6 +44,7 @@ SERVICE_NAMES = (
     "search_recipe",
     "get_meal_details",
     "set_planned_meal",
+    "set_shopping_item",
 )
 MEAL_TYPES = {"breakfast", "lunch", "dinner"}
 CONFIG_SCHEMA = vol.Schema(
@@ -84,7 +85,7 @@ class MealPlannerCoordinator(DataUpdateCoordinator):
             )
         except (OSError, sqlite3.Error, ValueError, TypeError) as err:
             raise UpdateFailed(f"Planerdaten konnten nicht geladen werden: {err}") from err
-        return build_dashboard_data(
+        dashboard = build_dashboard_data(
             plan,
             meals,
             self.settings["household_servings"],
@@ -92,6 +93,12 @@ class MealPlannerCoordinator(DataUpdateCoordinator):
             food_search,
             start,
         )
+        dashboard["shopping_checked"] = await self.hass.async_add_executor_job(
+            self.database.sync_shopping_progress,
+            start.isoformat(),
+            dashboard["shopping_list"],
+        )
+        return dashboard
 
     def _load_dashboard_inputs(
         self, week_start: str
@@ -237,6 +244,17 @@ SET_PLANNED_MEAL_SCHEMA = vol.Schema(
         vol.Required("meal_name"): vol.All(
             str, str.strip, vol.Length(min=1, max=100)
         ),
+    }
+)
+SET_SHOPPING_ITEM_SCHEMA = vol.Schema(
+    {
+        vol.Required("week_start"): vol.All(
+            str, str.strip, vol.Length(min=10, max=10)
+        ),
+        vol.Required("item_name"): vol.All(
+            str, str.strip, vol.Length(min=1, max=200)
+        ),
+        vol.Required("checked"): cv.boolean,
     }
 )
 WEEK_START_SCHEMA = vol.Schema(
@@ -597,6 +615,27 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
         if monday_for(day) == current_week:
             await coordinator.async_refresh()
 
+    async def handle_set_shopping_item(call: ServiceCall) -> dict[str, Any]:
+        week_start = _validate_week_start(call.data["week_start"])
+        week_data = await coordinator.async_get_week_data(week_start)
+        item_name = call.data["item_name"]
+        if item_name not in week_data["shopping_list"]:
+            raise HomeAssistantError(
+                f"„{item_name}“ gehört nicht zur Einkaufsliste dieser Woche."
+            )
+        await hass.async_add_executor_job(
+            database.set_shopping_item,
+            week_start.isoformat(),
+            item_name,
+            call.data["checked"],
+            week_data["shopping_list"][item_name]["amount"],
+            week_data["shopping_list"][item_name]["unit"],
+        )
+        updated_data = await coordinator.async_get_week_data(week_start)
+        if week_start == monday_for(dt_util.now().date()):
+            await coordinator.async_refresh()
+        return {"shopping_checked": updated_data["shopping_checked"]}
+
     hass.services.async_register(
         DOMAIN, "add_meal", handle_add_meal, schema=ADD_MEAL_SCHEMA
     )
@@ -627,6 +666,13 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
         "set_planned_meal",
         handle_set_planned_meal,
         schema=SET_PLANNED_MEAL_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "set_shopping_item",
+        handle_set_shopping_item,
+        schema=SET_SHOPPING_ITEM_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
     )
     hass.services.async_register(
         DOMAIN,
