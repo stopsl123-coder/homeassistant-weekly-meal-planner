@@ -156,6 +156,8 @@ class WeeklyMealPlannerCard extends HTMLElement {
     const save = this.querySelector("#save_planned_meal");
     const deleteButton = this.querySelector("#delete_meal");
     const empty = this.querySelector("#meal_choice_empty");
+    const instructions = this.querySelector("#saved_recipe_instructions");
+    const sourceLink = this.querySelector("#saved_recipe_source");
     this.querySelector("#meal_dialog_title").textContent =
       `${labels[mealType]} · ${new Intl.DateTimeFormat("de-DE", {
         weekday: "long",
@@ -190,12 +192,62 @@ class WeeklyMealPlannerCard extends HTMLElement {
     deleteButton.disabled = !recipes.some((recipe) => recipe.name === select.value);
     empty.hidden = candidates.length > 0;
     empty.textContent = `Noch keine gespeicherten Gerichte für ${labels[mealType]}.`;
-    this.querySelector("#meal_dialog_status").textContent = "";
+    const dialogStatus = this.querySelector("#meal_dialog_status");
+    dialogStatus.textContent = "";
+    let detailsRequest = 0;
+    const showRecipeDetails = async () => {
+      const request = ++detailsRequest;
+      instructions.textContent = "";
+      instructions.hidden = true;
+      sourceLink.hidden = true;
+      const recipe = recipes.find((item) => item.name === select.value);
+      if (!recipe) return;
+      dialogStatus.textContent = "Rezeptdetails werden geladen.";
+      try {
+        const result = await this._hass.callService(
+          "weekly_meal_planner",
+          "get_meal_details",
+          { name: recipe.name },
+          undefined,
+          false,
+          true,
+        );
+        const details = result?.response;
+        if (!details) {
+          throw new Error("Rezeptdetails konnten nicht geladen werden.");
+        }
+        if (request !== detailsRequest) return;
+        instructions.textContent = details.instructions || "";
+        instructions.hidden = !details.instructions;
+        const sourceName = details.source_name;
+        const sourceUrl =
+          details.source_url ||
+          (sourceName === "TheMealDB" ? "https://www.themealdb.com/" : "");
+        sourceLink.hidden = !sourceName && !sourceUrl;
+        sourceLink.textContent = sourceName
+          ? `Rezeptquelle: ${sourceName}`
+          : "Rezeptquelle öffnen";
+        if (sourceUrl) {
+          sourceLink.href = sourceUrl;
+          sourceLink.target = "_blank";
+          sourceLink.rel = "noopener noreferrer";
+        } else {
+          sourceLink.removeAttribute("href");
+        }
+        dialogStatus.textContent = "";
+      } catch (error) {
+        if (request !== detailsRequest) return;
+        dialogStatus.textContent =
+          error.message || "Rezeptdetails konnten nicht geladen werden.";
+      }
+    };
+    showRecipeDetails();
     select.onchange = () => {
       save.disabled = !select.value;
       deleteButton.disabled = !recipes.some(
         (recipe) => recipe.name === select.value,
       );
+      showRecipeDetails();
     };
     dialog.showModal();
   }
@@ -263,8 +315,97 @@ class WeeklyMealPlannerCard extends HTMLElement {
     typeSelect.value = mealType || "lunch";
     typeSelect.disabled = Boolean(day);
     this._pendingMealSlot = day ? { day, mealType } : undefined;
+    this.querySelector("#meal_name").value = "";
+    this.querySelector("#servings").value = "2";
+    this.querySelector("#recipe_instructions").value = "";
+    this.querySelector("#recipe_source_url").value = "";
+    this.querySelector("#recipe_source_name").value = "";
+    this.querySelector("#ingredients_container").replaceChildren();
+    this.querySelector("#recipe_search_query").value = "";
+    this.querySelector("#recipe_search_results").replaceChildren();
+    this.querySelector("#recipe_search_status").textContent = "";
+    this.querySelector("#nutrition_source").value = "bls";
     dialog.showModal();
     this.querySelector("#meal_name").focus();
+  }
+
+  async searchRecipeCatalog() {
+    const query = this.querySelector("#recipe_search_query").value.trim();
+    const status = this.querySelector("#recipe_search_status");
+    const resultsContainer = this.querySelector("#recipe_search_results");
+    resultsContainer.replaceChildren();
+    if (!query) {
+      status.textContent = "Gerichtname eingeben.";
+      return;
+    }
+    status.textContent = "TheMealDB wird durchsucht.";
+    try {
+      const serviceResult = await this._hass.callService(
+        "weekly_meal_planner",
+        "search_recipe",
+        { query },
+        undefined,
+        false,
+        true,
+      );
+      const recipes = serviceResult?.response?.results;
+      if (!Array.isArray(recipes)) {
+        throw new Error("TheMealDB lieferte ungültige Suchergebnisse.");
+      }
+      if (!recipes.length) {
+        status.textContent = "Keine passenden Gerichte gefunden.";
+        return;
+      }
+      status.textContent = `${recipes.length} Gerichte gefunden. Gericht zum Übernehmen auswählen.`;
+      for (const recipe of recipes) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "recipe-search-result";
+        button.textContent = [
+          recipe.name,
+          recipe.area,
+          recipe.category,
+        ].filter(Boolean).join(" · ");
+        button.onclick = () => this.importRecipe(recipe);
+        resultsContainer.appendChild(button);
+      }
+    } catch (error) {
+      status.textContent =
+        error.message || "TheMealDB-Suche fehlgeschlagen.";
+    }
+  }
+
+  importRecipe(recipe) {
+    this.querySelector("#meal_name").value = recipe.name || "";
+    this.querySelector("#recipe_instructions").value = recipe.instructions || "";
+    this.querySelector("#recipe_source_url").value = recipe.source_url || "";
+    this.querySelector("#recipe_source_name").value = recipe.source || "TheMealDB";
+    if (String(recipe.category || "").toLocaleLowerCase() === "breakfast") {
+      this.querySelector("#meal_type").value = "breakfast";
+    }
+    const ingredientsContainer = this.querySelector("#ingredients_container");
+    ingredientsContainer.replaceChildren();
+    for (const ingredient of recipe.ingredients || []) {
+      this.querySelector("#add_ingredient").click();
+      const row = ingredientsContainer.lastElementChild;
+      row.querySelector('input[aria-label="Zutat"]').value = ingredient.name;
+      const measure = ingredient.measure || "";
+      const measureHint = row.querySelector(".recipe-measure-hint");
+      measureHint.textContent = measure
+        ? `Originalmenge: ${measure} · bitte prüfen`
+        : "Menge in g, kg oder ml ergänzen.";
+      measureHint.hidden = false;
+      const parsedMeasure = parseRecipeMeasure(measure);
+      if (parsedMeasure) {
+        row.querySelector('input[aria-label="Menge"]').value = parsedMeasure.amount;
+        row.querySelector('select[aria-label="Einheit"]').value = parsedMeasure.unit;
+      } else {
+        row.querySelector('input[aria-label="Menge"]').value = "";
+      }
+    }
+    this.querySelector("#recipe_search_status").textContent =
+      "Zutaten und Mengen kontrollieren. Für jede Zutat BLS-Nährwerttreffer auswählen.";
+    this.querySelector("#recipe_search_results").replaceChildren();
   }
 
   updateDashboard() {
@@ -417,10 +558,13 @@ class WeeklyMealPlannerCard extends HTMLElement {
     for (const row of this.querySelectorAll(".ingredient-row")) {
       const input = row.querySelector('input[aria-label="Zutat"]');
       const query = input.value.trim().toLocaleLowerCase();
+      const source = this.querySelector("#nutrition_source").value;
       const rowSearch =
-        row._nutritionSearch?.query?.toLocaleLowerCase() === query
+        row._nutritionSearch?.query?.toLocaleLowerCase() === query &&
+        row._nutritionSearch.source === source
           ? row._nutritionSearch
-          : latestSearch?.query?.toLocaleLowerCase() === query
+          : latestSearch?.query?.toLocaleLowerCase() === query &&
+              (latestSearch.source || "usda") === source
             ? latestSearch
             : undefined;
 
@@ -458,20 +602,29 @@ class WeeklyMealPlannerCard extends HTMLElement {
     select.appendChild(placeholder);
     for (const result of search.results) {
       const option = document.createElement("option");
-      option.value = String(result.fdc_id);
+      const identifier = result.bls_code ?? result.fdc_id;
+      option.value = String(identifier);
       const caloriesPer100g = Number(result.nutrition.calories);
       const nutritionLabel =
         unit === "Stück" && Number.isFinite(weight) && weight > 0
           ? `${Math.round((caloriesPer100g * weight) / 100)} kcal je Stück (${weight} g)`
           : `${Math.round(caloriesPer100g)} kcal je 100 g`;
-      option.textContent = `${search.query} · USDA: ${result.description} · ${nutritionLabel}`;
+      const sourceLabel = result.bls_code ? "BLS" : "USDA";
+      const label = result.description_en
+        ? `${result.description} / ${result.description_en}`
+        : result.description;
+      option.textContent = `${search.query} · ${sourceLabel}: ${label} · ${nutritionLabel}`;
       select.appendChild(option);
     }
     select.hidden = search.results.length === 0;
-    if (search.results.some((result) => String(result.fdc_id) === selectedValue)) {
+    if (
+      search.results.some(
+        (result) => String(result.bls_code ?? result.fdc_id) === selectedValue,
+      )
+    ) {
       select.value = selectedValue;
     } else if (search.results.length === 1) {
-      select.value = String(search.results[0].fdc_id);
+      select.value = String(search.results[0].bls_code ?? search.results[0].fdc_id);
     }
   }
 
@@ -529,6 +682,13 @@ class WeeklyMealPlannerCard extends HTMLElement {
         .meal-form { display: grid; gap: 12px; }
         .meal-form h3, weekly-meal-planner-card #meal_dialog h3 { margin: 0 0 6px; font-size: 1.35rem; letter-spacing: -.02em; }
         .ingredient-row { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 8px; margin-bottom: 10px; padding: 12px; border: 1px solid var(--divider-color); border-radius: 14px; background: var(--secondary-background-color); }
+        .recipe-measure-hint { grid-column: 1 / -1; color: var(--secondary-text-color); font-size: .78rem; }
+        .recipe-search { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--divider-color); border-radius: 14px; background: var(--secondary-background-color); }
+        .recipe-search-controls { display: flex; gap: 8px; }
+        .recipe-search-controls input { flex: 1; min-width: 0; }
+        .recipe-search-results { display: grid; gap: 6px; max-height: 220px; overflow: auto; }
+        .recipe-search-result { padding: 9px 11px; border: 1px solid var(--divider-color); border-radius: 10px; background: var(--ha-card-background, var(--card-background-color)); color: var(--primary-text-color); text-align: left; font: inherit; cursor: pointer; }
+        .recipe-search-result:hover { border-color: var(--primary-color); }
         .ingredient-row input, .ingredient-row select, weekly-meal-planner-card dialog input, weekly-meal-planner-card dialog select { box-sizing: border-box; min-width: 0; min-height: 42px; padding: 9px 11px; border: 1px solid var(--divider-color); border-radius: 10px; background: var(--ha-card-background, var(--card-background-color)); color: var(--primary-text-color); font: inherit; }
         .ingredient-row button, .ingredient-row .piece-weight, .ingredient-row .usda-match { grid-column: 1 / -1; }
         .ingredient-row button, #add_ingredient, #save_meal, weekly-meal-planner-card .dialog-actions button { min-height: 40px; padding: 8px 13px; border: 1px solid var(--divider-color); border-radius: 10px; background: var(--secondary-background-color); color: var(--primary-text-color); font: inherit; font-weight: 650; cursor: pointer; }
@@ -539,6 +699,7 @@ class WeeklyMealPlannerCard extends HTMLElement {
         weekly-meal-planner-card dialog::backdrop { background: rgba(12, 18, 28, .58); backdrop-filter: blur(5px); }
         #meal_dialog label { display: block; margin: 12px 0 6px; color: var(--secondary-text-color); font-size: .82rem; font-weight: 700; }
         #meal_dialog select { width: 100%; }
+        #saved_recipe_instructions { white-space: pre-wrap; max-height: 260px; overflow: auto; color: var(--secondary-text-color); font-size: .88rem; line-height: 1.5; }
         weekly-meal-planner-card .dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 18px; }
         #delete_meal { margin-right: auto; border-color: var(--error-color); color: var(--error-color); }
         .recipe-dialog-content { padding: 2px; }
@@ -596,6 +757,8 @@ class WeeklyMealPlannerCard extends HTMLElement {
           <label for="meal_choice">Gespeichertes Gericht</label>
           <select id="meal_choice"></select>
           <p id="meal_choice_empty" hidden></p>
+          <p id="saved_recipe_instructions" hidden></p>
+          <a id="saved_recipe_source" hidden></a>
           <p id="meal_dialog_status" role="status" aria-live="polite"></p>
           <div class="dialog-actions">
             <button id="delete_meal" type="button">Gericht löschen</button>
@@ -608,16 +771,36 @@ class WeeklyMealPlannerCard extends HTMLElement {
           <div class="recipe-dialog-content">
             <div class="meal-form">
             <h3>Neues Gericht</h3>
-            <input id="meal_name" placeholder="Gerichtname" maxlength="100" required>
-            <label for="servings">Portionen pro Rezept</label>
-            <input id="servings" type="number" min="1" max="100" value="2" required>
-            <select id="meal_type" aria-label="Mahlzeit">
-              <option value="lunch">Mittagessen</option>
+              <div class="recipe-search">
+                <strong>Gericht aus TheMealDB suchen</strong>
+                <div class="recipe-search-controls">
+                  <input id="recipe_search_query" placeholder="z. B. Chicken Handi" maxlength="100" aria-label="Gericht suchen">
+                  <button id="search_recipe" type="button">Suchen</button>
+                </div>
+                <p id="recipe_search_status" role="status" aria-live="polite"></p>
+                <div id="recipe_search_results" class="recipe-search-results"></div>
+                <small>Rezepte aus TheMealDB. Mengen vor dem Speichern prüfen; Nährwerte pro Zutat zuordnen.</small>
+              </div>
+              <input id="meal_name" placeholder="Gerichtname" maxlength="100" required>
+              <label for="servings">Portionen pro Rezept</label>
+              <input id="servings" type="number" min="1" max="100" value="2" required>
+              <label for="nutrition_source">Nährwertdatenbank</label>
+              <select id="nutrition_source" aria-label="Nährwertdatenbank">
+                <option value="bls">BLS 4.0 · deutsche Lebensmittel</option>
+                <option value="usda">USDA FoodData Central</option>
+              </select>
+              <small>BLS 4.0: Max Rubner-Institut (2025), CC BY 4.0 · <a href="https://doi.org/10.25826/Data20251217-134202-0" target="_blank" rel="noopener noreferrer">Datenquelle</a></small>
+              <select id="meal_type" aria-label="Mahlzeit">
+                <option value="lunch">Mittagessen</option>
               <option value="dinner">Abendessen</option>
               <option value="breakfast">Frühstück</option>
             </select>
             <div id="ingredients_container"></div>
-            <p>USDA-Treffernamen können Englisch sein. Nährwerte gelten je 100 g; für „Stück“ Gewicht pro Stück angeben.</p>
+            <label for="recipe_instructions">Zubereitung</label>
+            <textarea id="recipe_instructions" rows="5" maxlength="20000"></textarea>
+            <input id="recipe_source_url" type="hidden">
+            <input id="recipe_source_name" type="hidden">
+            <p>BLS-Daten: Bundeslebensmittelschlüssel 4.0, Max Rubner-Institut, CC BY 4.0. Nährwerte gelten je 100 g. Importierte Mengen prüfen; für „Stück“ Gewicht pro Stück angeben.</p>
             <p id="recipe_dialog_status" role="status" aria-live="polite"></p>
             <button id="add_ingredient" type="button">Zutat hinzufügen</button>
             <button id="save_meal" type="button">Gericht speichern</button>
@@ -644,6 +827,8 @@ class WeeklyMealPlannerCard extends HTMLElement {
 
     this.querySelector("#new_meal").onclick = () =>
       this.openRecipeDialog(this.querySelector("#meal_type").value);
+    this.querySelector("#search_recipe").onclick = () =>
+      this.searchRecipeCatalog();
     this.querySelector("#previous_week").onclick = () => this.changeWeek(-1);
     this.querySelector("#next_week").onclick = () => this.changeWeek(1);
     this.querySelector("#refresh_week_data").onclick = () =>
@@ -660,6 +845,18 @@ class WeeklyMealPlannerCard extends HTMLElement {
       this.deleteMeal(this.querySelector("#meal_choice").value);
     this.querySelector("#close_recipe_dialog").onclick = () =>
       this.querySelector("#recipe_dialog").close();
+    this.querySelector("#nutrition_source").onchange = () => {
+      for (const row of container.querySelectorAll(".ingredient-row")) {
+        row._nutritionSearch = undefined;
+        const matches = row.querySelector(".usda-match");
+        matches.replaceChildren();
+        matches.hidden = true;
+        row.querySelector("button").textContent =
+          this.querySelector("#nutrition_source").value === "bls"
+            ? "BLS-Lebensmittel suchen"
+            : "USDA-Treffer suchen";
+      }
+    };
     this.querySelector("#recipe_dialog").addEventListener("close", () => {
       this._pendingMealSlot = undefined;
       this.querySelector("#meal_type").disabled = false;
@@ -706,11 +903,17 @@ class WeeklyMealPlannerCard extends HTMLElement {
 
       const search = document.createElement("button");
       search.type = "button";
-      search.textContent = "USDA-Treffer suchen";
+      search.textContent =
+        this.querySelector("#nutrition_source").value === "bls"
+          ? "BLS-Lebensmittel suchen"
+          : "USDA-Treffer suchen";
+      const measureHint = document.createElement("small");
+      measureHint.className = "recipe-measure-hint";
+      measureHint.hidden = true;
 
       const matches = document.createElement("select");
       matches.className = "usda-match";
-      matches.setAttribute("aria-label", "USDA-Treffer");
+      matches.setAttribute("aria-label", "Nährwerttreffer auswählen");
       matches.hidden = true;
       name.addEventListener("input", () => {
         matches.replaceChildren();
@@ -739,10 +942,11 @@ class WeeklyMealPlannerCard extends HTMLElement {
           return;
         }
         try {
+          const source = this.querySelector("#nutrition_source").value;
           const serviceResult = await this._hass.callService(
             "weekly_meal_planner",
             "search_ingredient",
-            { query },
+            { query, source },
             undefined,
             false,
             true,
@@ -752,21 +956,33 @@ class WeeklyMealPlannerCard extends HTMLElement {
             search?.query?.toLocaleLowerCase() === query.toLocaleLowerCase() &&
             Array.isArray(search.results)
           ) {
+            row._nutritionSearch = search;
             this.updateNutritionSearchResults(search);
           }
           const matches = row.querySelector(".usda-match");
+          if (!search?.results?.length) {
+            setStatus(
+              source === "bls"
+                ? `BLS fand keine passenden Lebensmittel für „${query}“.`
+                : `USDA fand keine passenden Lebensmittel für „${query}“.`,
+              true,
+            );
+            return;
+          }
           if (!matches || matches.hidden || !matches.options.length) {
             throw new Error(
-              "USDA-Suche lieferte Treffer, Auswahl konnte nicht angezeigt werden.",
+              "Nährwertsuche lieferte Treffer, Auswahl konnte nicht angezeigt werden.",
             );
           }
-          setStatus("USDA-Treffer geladen. Passenden Eintrag auswählen.");
+          setStatus(
+            `${source === "bls" ? "BLS" : "USDA"}-Treffer geladen. Passenden Eintrag auswählen.`,
+          );
         } catch (error) {
-          setStatus(error.message || "USDA-Suche fehlgeschlagen.", true);
+          setStatus(error.message || "Nährwertsuche fehlgeschlagen.", true);
         }
       };
 
-      row.append(name, amount, unit, pieceWeight, search, matches);
+      row.append(name, amount, unit, pieceWeight, search, matches, measureHint);
       container.appendChild(row);
     };
 
@@ -797,8 +1013,12 @@ class WeeklyMealPlannerCard extends HTMLElement {
           setStatus(`Zutat "${item}" ist doppelt. Bitte Mengen zusammenfassen.`, true);
           return;
         }
-        if (!selectedMatch.value) {
-          setStatus(`Bitte für „${item}“ USDA-Treffer suchen und auswählen.`, true);
+        const selectedResult = row._nutritionSearch?.results?.find(
+          (match) =>
+            String(match.bls_code ?? match.fdc_id) === selectedMatch.value,
+        );
+        if (!selectedResult) {
+          setStatus(`Bitte für „${item}“ einen BLS- oder USDA-Treffer auswählen.`, true);
           return;
         }
         if (
@@ -812,7 +1032,9 @@ class WeeklyMealPlannerCard extends HTMLElement {
         ingredients[item] = {
           amount,
           unit,
-          fdc_id: Number(selectedMatch.value),
+          ...(selectedResult.bls_code
+            ? { bls_code: selectedResult.bls_code }
+            : { fdc_id: Number(selectedResult.fdc_id) }),
           ...(unit === "Stück"
             ? { weight_per_unit_g: Number(weightPerUnit.value) }
             : {}),
@@ -830,6 +1052,9 @@ class WeeklyMealPlannerCard extends HTMLElement {
           meal_type: mealType,
           servings,
           ingredients,
+          instructions: this.querySelector("#recipe_instructions").value.trim(),
+          source_url: this.querySelector("#recipe_source_url").value.trim(),
+          source_name: this.querySelector("#recipe_source_name").value.trim(),
         });
       } catch (error) {
         setStatus(error.message || "Gericht konnte nicht gespeichert werden.", true);
@@ -876,6 +1101,16 @@ class WeeklyMealPlannerCard extends HTMLElement {
       }
     };
   }
+}
+
+function parseRecipeMeasure(measure) {
+  const match = String(measure).trim().match(
+    /^(\d+(?:[.,]\d+)?)\s*(kg|g|mg|ml|l)\b/i,
+  );
+  if (!match) return undefined;
+  const amount = Number(match[1].replace(",", "."));
+  if (!Number.isFinite(amount) || amount <= 0) return undefined;
+  return { amount, unit: match[2].toLocaleLowerCase() };
 }
 
 function mondayOf(day) {

@@ -3,12 +3,10 @@
     "step": {
       "user": {
         "title": "Weekly Meal Planner",
-        "description": "Enter your USDA FoodData Central API key. It is used to search and save ingredient nutrition."
+        "description": "Nutrition searches use the German BLS database by default. USDA FoodData Central is optional."
       }
     },
-    "error": {
-      "no_api_key": "API key must not be empty."
-    }
+    "error": {}
   },
   "abort": {
     "no_api_key": "The imported YAML configuration has no API key."
@@ -17,9 +15,9 @@
     "step": {
       "init": {
         "title": "Meal planner settings",
-        "description": "Update the USDA API key and planning preferences.",
+        "description": "Optionally update the USDA API key and planning preferences.",
         "data": {
-          "api_key": "USDA FoodData Central API key",
+          "api_key": "Optional USDA FoodData Central API key",
           "target_kcal": "Daily calorie target",
           "household_servings": "Household servings",
           "excluded_ingredients": "Excluded ingredients (comma-separated)"

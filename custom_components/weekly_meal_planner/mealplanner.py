@@ -281,6 +281,7 @@ def build_dashboard_data(
             {
                 "name": meal["name"],
                 "meal_type": meal["meal_type"],
+                "source_name": meal.get("source_name", ""),
                 "calories": (
                     None
                     if missing or not meal["ingredients"]

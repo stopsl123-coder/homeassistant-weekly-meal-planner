@@ -1,5 +1,5 @@
 add_meal:
-  description: Speichert Rezept mit Gesamtzutatenmengen und USDA-Nährwerten pro 100 g.
+  description: Speichert Rezept mit Gesamtzutatenmengen und BLS- oder USDA-Nährwerten pro 100 g.
   fields:
     name:
       description: Name des Gerichts
@@ -11,18 +11,21 @@ add_meal:
       description: Anzahl der Portionen in den angegebenen Gesamtmengen
       example: 2
     ingredients:
-      description: Zutaten mit positiver Menge und Einheit
+      description: Zutaten mit positiver Menge, Einheit und BLS-Code oder USDA-Food-ID
       example:
-        Hähnchen:
-          amount: 200
+        Haferflocken:
+          amount: 100
           unit: g
-        Reis:
-          amount: 150
-          unit: g
-        Ei:
-          amount: 2
-          unit: Stück
-          weight_per_unit_g: 60
+          bls_code: "C131000"
+    instructions:
+      description: Optionale Zubereitung des Rezepts
+      example: "Haferflocken mit Milch aufkochen."
+    source_url:
+      description: Optionale HTTPS-URL zur Rezeptquelle
+      example: "https://example.org/recipe"
+    source_name:
+      description: Name der Rezeptquelle
+      example: "TheMealDB"
 
 delete_meal:
   description: Löscht ein gespeichertes Gericht und entfernt es aus allen Wochenplänen.
@@ -42,14 +45,31 @@ get_week_data:
       example: "2026-10-12"
 
 search_ingredient:
-  description: Sucht USDA-Nährwerttreffer für eine Zutat zur Auswahl im Rezeptformular.
+  description: Sucht BLS- oder USDA-Nährwerttreffer für eine Zutat.
   fields:
     query:
-      description: Zutatenname für die USDA-Suche
-      example: "brown rice"
+      description: Zutatenname; BLS sucht standardmäßig deutsch und englisch
+      example: "Haferflocken"
+    source:
+      description: BLS (Standard) oder usda
+      example: "bls"
     force_refresh:
       description: USDA-Suche trotz gültigem Zwischenspeicher erneut ausführen
       example: true
+
+search_recipe:
+  description: Sucht Gerichte nach Name in TheMealDB; Ergebnisse können importiert werden.
+  fields:
+    query:
+      description: Gerichtname für die TheMealDB-Suche
+      example: "chicken"
+
+get_meal_details:
+  description: Gibt Zubereitung und Herkunft eines gespeicherten Gerichts zurück.
+  fields:
+    name:
+      description: Name des gespeicherten Gerichts
+      example: "Linsencurry"
 
 generate_week_plan:
   description: Plant verfügbare Lunch- und Dinner-Rezepte für aktuelle oder nächste Woche.

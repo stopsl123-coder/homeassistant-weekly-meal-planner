@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import itertools
 import sqlite3
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterator
+
+from .bls import parse_bls_archive
 
 
 class MealPlannerDatabase:
@@ -51,6 +54,19 @@ class MealPlannerDatabase:
                 connection.execute(
                     "ALTER TABLE meals ADD COLUMN servings INTEGER NOT NULL DEFAULT 1"
                 )
+                columns.add("servings")
+            if "instructions" not in columns:
+                connection.execute(
+                    "ALTER TABLE meals ADD COLUMN instructions TEXT NOT NULL DEFAULT ''"
+                )
+            if "source_url" not in columns:
+                connection.execute(
+                    "ALTER TABLE meals ADD COLUMN source_url TEXT NOT NULL DEFAULT ''"
+                )
+            if "source_name" not in columns:
+                connection.execute(
+                    "ALTER TABLE meals ADD COLUMN source_name TEXT NOT NULL DEFAULT ''"
+                )
 
             connection.execute(
                 """
@@ -81,6 +97,19 @@ class MealPlannerDatabase:
                 )
                 """
             )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS bls_foods (
+                    code TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    name_en TEXT NOT NULL,
+                    calories REAL NOT NULL,
+                    protein REAL NOT NULL,
+                    fat REAL NOT NULL,
+                    carbs REAL NOT NULL
+                )
+                """
+            )
 
     def add_meal(
         self,
@@ -88,6 +117,9 @@ class MealPlannerDatabase:
         meal_type: str,
         servings: int,
         ingredients: dict[str, dict[str, Any]],
+        instructions: str = "",
+        source_url: str = "",
+        source_name: str = "",
     ) -> None:
         serialized = json.dumps(
             ingredients, ensure_ascii=False, allow_nan=False, separators=(",", ":")
@@ -95,24 +127,37 @@ class MealPlannerDatabase:
         with self._connect() as connection:
             cursor = connection.execute(
                 """
-                UPDATE meals SET ingredients = ?, meal_type = ?, servings = ?
+                UPDATE meals SET ingredients = ?, meal_type = ?, servings = ?,
+                    instructions = ?, source_url = ?, source_name = ?
                 WHERE name = ?
                 """,
-                (serialized, meal_type, servings, name),
+                (
+                    serialized, meal_type, servings, instructions, source_url,
+                    source_name, name,
+                ),
             )
             if cursor.rowcount == 0:
                 connection.execute(
                     """
-                    INSERT INTO meals (name, ingredients, meal_type, servings)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO meals
+                        (name, ingredients, meal_type, servings, instructions,
+                         source_url, source_name)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (name, serialized, meal_type, servings),
+                    (
+                        name, serialized, meal_type, servings, instructions,
+                        source_url, source_name,
+                    ),
                 )
 
     def get_meals(self) -> list[dict[str, Any]]:
         with self._connect() as connection:
             rows = connection.execute(
-                "SELECT name, ingredients, meal_type, servings FROM meals ORDER BY name"
+                """
+                SELECT name, ingredients, meal_type, servings, instructions,
+                    source_url, source_name
+                FROM meals ORDER BY name
+                """
             ).fetchall()
         return [
             {
@@ -120,6 +165,9 @@ class MealPlannerDatabase:
                 "ingredients": json.loads(row["ingredients"]),
                 "meal_type": row["meal_type"],
                 "servings": row["servings"],
+                "instructions": row["instructions"],
+                "source_url": row["source_url"],
+                "source_name": row["source_name"],
             }
             for row in rows
         ]
@@ -137,7 +185,9 @@ class MealPlannerDatabase:
         with self._connect() as connection:
             row = connection.execute(
                 """
-                SELECT name, ingredients, meal_type, servings FROM meals
+                SELECT name, ingredients, meal_type, servings, instructions,
+                    source_url, source_name
+                FROM meals
                 WHERE name = ? ORDER BY rowid DESC LIMIT 1
                 """,
                 (name,),
@@ -149,6 +199,122 @@ class MealPlannerDatabase:
             "ingredients": json.loads(row["ingredients"]),
             "meal_type": row["meal_type"],
             "servings": row["servings"],
+            "instructions": row["instructions"],
+            "source_url": row["source_url"],
+            "source_name": row["source_name"],
+        }
+
+    def has_bls_data(self) -> bool:
+        with self._connect() as connection:
+            return connection.execute("SELECT 1 FROM bls_foods LIMIT 1").fetchone() is not None
+
+    def import_bls_archive(self, payload: bytes) -> int:
+        """Replace local BLS records atomically after validating the full archive."""
+        with self._connect() as connection:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS bls_foods_import (
+                    code TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    name_en TEXT NOT NULL,
+                    calories REAL NOT NULL,
+                    protein REAL NOT NULL,
+                    fat REAL NOT NULL,
+                    carbs REAL NOT NULL
+                )
+                """
+            )
+            connection.execute("DELETE FROM bls_foods_import")
+            imported = 0
+            records = parse_bls_archive(payload)
+            while batch := list(itertools.islice(records, 500)):
+                connection.executemany(
+                    """
+                    INSERT INTO bls_foods_import
+                        (code, name, name_en, calories, protein, fat, carbs)
+                    VALUES (:code, :name, :name_en, :calories, :protein, :fat, :carbs)
+                    """,
+                    batch,
+                )
+                imported += len(batch)
+            if imported < 5_000:
+                raise sqlite3.DatabaseError(
+                    f"BLS-Import unvollständig: nur {imported} Lebensmittel."
+                )
+            connection.execute("DELETE FROM bls_foods")
+            connection.execute(
+                """
+                INSERT INTO bls_foods (code, name, name_en, calories, protein, fat, carbs)
+                SELECT code, name, name_en, calories, protein, fat, carbs
+                FROM bls_foods_import
+                """
+            )
+            connection.execute("DROP TABLE bls_foods_import")
+            return imported
+
+    def search_bls_foods(self, query: str, limit: int = 15) -> list[dict[str, Any]]:
+        pattern = f"%{query.strip()}%"
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT code, name, name_en, calories, protein, fat, carbs
+                FROM bls_foods
+                WHERE name LIKE ? COLLATE NOCASE OR name_en LIKE ? COLLATE NOCASE
+                ORDER BY
+                    CASE
+                        WHEN name = ? COLLATE NOCASE OR name_en = ? COLLATE NOCASE THEN 0
+                        WHEN name LIKE ? COLLATE NOCASE OR name_en LIKE ? COLLATE NOCASE THEN 1
+                        ELSE 2
+                    END,
+                    name
+                LIMIT ?
+                """,
+                (
+                    pattern,
+                    pattern,
+                    query.strip(),
+                    query.strip(),
+                    f"{query.strip()}%",
+                    f"{query.strip()}%",
+                    limit,
+                ),
+            ).fetchall()
+        return [
+            {
+                "bls_code": row["code"],
+                "description": row["name"],
+                "description_en": row["name_en"],
+                "nutrition": {
+                    "calories": row["calories"],
+                    "protein": row["protein"],
+                    "fat": row["fat"],
+                    "carbs": row["carbs"],
+                },
+            }
+            for row in rows
+        ]
+
+    def get_bls_food(self, code: str) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT code, name, name_en, calories, protein, fat, carbs
+                FROM bls_foods WHERE code = ?
+                """,
+                (code,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "bls_code": row["code"],
+            "description": row["name"],
+            "description_en": row["name_en"],
+            "nutrition": {
+                "calories": row["calories"],
+                "protein": row["protein"],
+                "fat": row["fat"],
+                "carbs": row["carbs"],
+            },
         }
 
     def cache_nutrition_search(

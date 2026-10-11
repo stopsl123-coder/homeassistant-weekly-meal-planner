@@ -3,12 +3,10 @@
     "step": {
       "user": {
         "title": "Weekly Meal Planner",
-        "description": "Gib deinen USDA-FoodData-Central-API-Schlüssel ein. Er wird für Suche und Speicherung von Nährwerten verwendet."
+        "description": "Nährwerte werden standardmäßig aus dem Bundeslebensmittelschlüssel (BLS) gesucht. USDA FoodData Central ist optional."
       }
     },
-    "error": {
-      "no_api_key": "API-Key darf nicht leer sein."
-    }
+    "error": {}
   },
   "abort": {
     "no_api_key": "In der importierten YAML-Konfiguration fehlt der API-Schlüssel."
@@ -17,9 +15,9 @@
     "step": {
       "init": {
         "title": "Essensplaner-Einstellungen",
-        "description": "USDA-API-Schlüssel und Planungseinstellungen ändern.",
+        "description": "Optionalen USDA-API-Schlüssel und Planungseinstellungen ändern.",
         "data": {
-          "api_key": "USDA-FoodData-Central-API-Schlüssel",
+          "api_key": "Optionaler USDA-FoodData-Central-API-Schlüssel",
           "target_kcal": "Tägliches Kalorienziel",
           "household_servings": "Portionen im Haushalt",
           "excluded_ingredients": "Ausgeschlossene Zutaten (durch Komma getrennt)"

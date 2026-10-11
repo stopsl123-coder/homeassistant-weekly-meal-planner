@@ -11,13 +11,16 @@ und Feiertagen im Dashboard anzeigst.
 2. Starte Home Assistant neu.
 3. Öffne **Einstellungen > Geräte & Dienste > Integration hinzufügen**.
 4. Suche nach **Weekly Meal Planner** und wähle die Integration aus.
-5. Trage deinen USDA-FoodData-Central-API-Schlüssel ein. Einen Schlüssel
-   erhältst du unter <https://fdc.nal.usda.gov/api-key-signup.html>.
+5. USDA-FoodData-Central-API-Schlüssel ist optional. BLS 4.0 ist Standard und
+   benötigt keinen Schlüssel. Einen USDA-Schlüssel erhältst du unter
+   <https://fdc.nal.usda.gov/api-key-signup.html>.
 6. Öffne nach dem Einrichten die Integration und wähle **Optionen**, um
    API-Schlüssel und Planungseinstellungen anzupassen.
 
-Für USDA-Suchen benötigt Home Assistant Internetzugang. Ohne gültigen Schlüssel
-lassen sich keine USDA-Nährwerttreffer für neue Rezepte abrufen.
+Für die erste BLS-Suche und TheMealDB-Rezeptsuche braucht Home Assistant
+Internetzugang. BLS wird beim ersten Suchaufruf als offizielles Datenarchiv
+geladen und danach lokal durchsucht. USDA-Suche braucht zusätzlich einen
+API-Schlüssel.
 
 ## 2. Rezeptkarte zum Dashboard hinzufügen
 
@@ -54,7 +57,8 @@ Essensplan auch ohne Rezeptkarte an.
 
 Öffne **Einstellungen > Geräte & Dienste > Weekly Meal Planner > Optionen**.
 
-- **USDA-FoodData-Central-API-Schlüssel:** Schlüssel für Zutatensuchen.
+- **USDA-FoodData-Central-API-Schlüssel:** Optional; nur für USDA-Suchen
+  erforderlich.
 - **Tägliches Kalorienziel:** Ziel für geplantes Mittag- und Abendessen
   zusammen. Es ist kein persönlicher medizinischer Ernährungsrat.
 - **Portionen im Haushalt:** Anzahl der Portionen, für die Einkaufsmengen
@@ -80,10 +84,12 @@ eingeplant werden.
 6. Trage Zutat, Menge und Einheit ein. Menge muss größer als null sein.
    Wählst du **Stück**, erscheint zusätzlich Feld **Gewicht pro Stück (g)**.
    Trage dort Gewicht eines einzelnen Stücks ein, zum Beispiel `60` für Ei.
-7. Klicke in derselben Zeile auf **USDA-Treffer suchen**.
-8. Wähle im angezeigten Auswahlfeld den passenden USDA-Eintrag. Wiederhole
+7. Wähle als Nährwertquelle **BLS 4.0** oder optional **USDA FoodData Central**.
+8. Klicke in derselben Zeile auf **BLS-Lebensmittel suchen** oder
+   **USDA-Treffer suchen**.
+9. Wähle passenden Eintrag. Wiederhole
    Schritte 5 bis 8 für jede Zutat.
-9. Klicke auf **Gericht speichern**.
+10. Klicke auf **Gericht speichern**.
 
 Beispiel für ein Rezept mit vier Portionen:
 
@@ -97,25 +103,33 @@ Das bedeutet: Mengen gelten für vier Portionen, nicht für eine einzelne
 Portion. Die Integration berechnet Nährwerte pro Rezeptportion und skaliert
 Einkaufsmengen auf die eingestellte Haushaltsgröße.
 
-USDA-Suchergebnisse können englische Bezeichnungen verwenden. Prüfe Beschreibung
-und Nährwerte pro 100 g im Auswahlfeld, bevor du Treffer auswählst. Wenn du
-Zutatennamen nach der Suche änderst, suche Treffer erneut.
+USDA-Suchergebnisse können englische Bezeichnungen verwenden. BLS-Suche
+unterstützt deutsche und englische Namen. Prüfe Beschreibung und Nährwerte pro
+100 g im Auswahlfeld, bevor du Treffer auswählst. Wenn du Zutatennamen nach der
+Suche änderst, suche Treffer erneut.
 Bei Einheit **Stück** zeigt Auswahlkarte zusätzlich geschätzte kcal pro Stück,
 basierend auf eingegebenem Gewicht. Ohne dieses Gewicht kann Integration
-Nährwerte dieser Zutat nicht berechnen. Die USDA-Datenbank liefert Angaben pro
-100 g; Home Assistant übersetzt originale USDA-Bezeichnungen nicht automatisch.
+Nährwerte dieser Zutat nicht berechnen. BLS und USDA liefern Angaben pro 100 g;
+Home Assistant rechnet Volumen nicht automatisch in Gewicht um.
 
 ### Hinweis zu Nährwerten und Einheiten
 
 Nährwerte werden zuverlässig aus Zutaten berechnet, deren Menge als Gewicht
 vorliegt, beispielsweise `g`, `kg` oder `mg`. Bei **Stück** musst du zusätzlich
-Gewicht eines Stücks angeben, damit Integration USDA-Werte pro 100 g auf
+Gewicht eines Stücks angeben, damit Integration Nährwerte pro 100 g auf
 Stückzahl umrechnen kann. Volumen wie `ml` wird nicht pauschal in Gramm
-umgerechnet. Fehlen erforderliche Gewichte oder USDA-Nährwerte, können Tages-
+umgerechnet. Fehlen erforderliche Gewichte oder Nährwerte, können Tages-
 und Wochensummen als nicht verfügbar erscheinen. Einkaufsliste kann Mengen
 trotzdem anzeigen.
 
 ## 5. Weitere Rezepte und Änderungen
+
+Über **Gericht aus TheMealDB suchen** kannst du ein Rezept finden und dessen
+Zutaten, Mengen und Zubereitung übernehmen. Prüfe importierte Mengen immer:
+Angaben wie „to taste“, Tassen oder Esslöffel werden nicht automatisch in Gramm
+umgerechnet. Suche für jede Zutat einen BLS- oder USDA-Treffer und bestätige
+damit die Nährwertzuordnung. Herkunft und Zubereitung bleiben am Rezept
+gespeichert; TheMealDB-Quelle erscheint in der Gerichtauswahl.
 
 Lege jedes Rezept einzeln mit der Rezeptkarte an. Wenn du ein gespeichertes
 Rezept mit demselben Namen erneut speicherst, wird es aktualisiert, nicht als
@@ -217,11 +231,11 @@ Du kannst statt Rezeptkarte auch Home-Assistant-Aktion
        unit: g
    ```
 
-Wenn keine `fdc_id` angegeben ist, sucht Integration automatisch nach
-USDA-Treffern und verwendet ersten passenden Treffer. Für gezielte Auswahl
-empfiehlt sich Rezeptkarte. Gültige Mahlzeitentypen sind `breakfast`, `lunch`
-und `dinner`; `servings` muss zwischen 1 und 100 liegen. Jede Zutat braucht
-positive `amount` und `unit`.
+Wenn weder `fdc_id` noch `bls_code` angegeben ist, sucht Integration bei
+vorhandenem USDA-Schlüssel automatisch nach Treffern und verwendet ersten
+passenden Eintrag. Für gezielte Auswahl empfiehlt sich Rezeptkarte. Gültige
+Mahlzeitentypen sind `breakfast`, `lunch` und `dinner`; `servings` muss zwischen
+1 und 100 liegen. Jede Zutat braucht positive `amount` und `unit`.
 
 Weitere Aktionen findest du ebenfalls unter **Entwicklerwerkzeuge > Aktionen**:
 
@@ -231,12 +245,18 @@ Weitere Aktionen findest du ebenfalls unter **Entwicklerwerkzeuge > Aktionen**:
   aktuellen oder nächsten Woche als Service-Antwort abrufen.
 - `weekly_meal_planner.generate_shopping_list`: Sensoren für gespeicherten
   Plan aktualisieren.
-- `weekly_meal_planner.search_ingredient`: USDA-Treffer suchen. Datenbeispiel:
+- `weekly_meal_planner.search_ingredient`: Nährwerttreffer suchen.
+  BLS ist Standard; für USDA `source: usda` und `force_refresh` angeben.
+  Datenbeispiel:
 
   ```yaml
-  query: brown rice
+  query: Haferflocken
+  source: bls
   force_refresh: false
   ```
+- `weekly_meal_planner.search_recipe`: TheMealDB-Rezepte nach Name suchen.
+- `weekly_meal_planner.get_meal_details`: Zubereitung und Herkunft eines
+  gespeicherten Rezepts abrufen.
 
 ## 9. Einkaufsliste und Sensoren
 
@@ -258,15 +278,16 @@ und anschließend als Entitäts- oder Markdown-Karte ins Dashboard legen.
   `/config/www/weekly_meal_planner.js` liegt und Ressource als JavaScript-Modul
   mit URL `/local/weekly_meal_planner.js` registriert ist. Danach Browsercache
   mit `Strg+F5` leeren.
-- **USDA-Suche schlägt fehl:** Prüfe API-Schlüssel unter Integration-Optionen,
-  Internetverbindung des Home Assistant und Schreibweise der Zutat. Bei
-  mehrdeutigen Namen probiere englischen Begriff.
-- **USDA-Treffer erscheint nicht:** Warte kurz auf Sensoraktualisierung,
-  kontrolliere, dass Suchtext unverändert ist, oder suche erneut.
+- **BLS-Suche schlägt fehl:** Prüfe Internetverbindung beim ersten Suchaufruf.
+  Nach erfolgreichem Import funktioniert Suche lokal. USDA braucht API-Schlüssel.
+- **BLS-Treffer erscheint nicht:** Suche mit deutschem oder englischem Namen;
+  einzelne Lebensmittel können im BLS anders benannt sein.
+- **TheMealDB-Suche schlägt fehl:** Prüfe Home-Assistant-Internetverbindung.
+  Ergebnisse können englische Namen oder unvollständige Mengen enthalten.
 - **Kalender ist leer:** Kontrolliere Entity `calendar.weekly_meal_planner`
   und erstelle Wochenplan mit **Woche automatisch planen**.
 - **Kalorien oder Makros fehlen:** Prüfe Attribut `missing_nutrition` am
-  Kaloriensensor. Gewichtseinheit und USDA-Treffer für betroffene Zutaten
+  Kaloriensensor. Gewichtseinheit und BLS-/USDA-Treffer für betroffene Zutaten
   kontrollieren.
 - **Kalender- oder Sensor-Entity fehlt:** Öffne **Einstellungen > Geräte &
   Dienste > Weekly Meal Planner** und kontrolliere, ob Integration geladen ist.

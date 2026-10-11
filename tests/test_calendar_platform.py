@@ -245,12 +245,12 @@ async def test_ingredient_search_returns_results_to_service_caller(hass) -> None
     response = await hass.services.async_call(
         DOMAIN,
         "search_ingredient",
-        {"query": "egg"},
+        {"query": "egg", "source": "usda"},
         blocking=True,
         return_response=True,
     )
 
-    assert response == {"query": "egg", "results": matches}
+    assert response == {"query": "egg", "source": "usda", "results": matches}
     await hass.services.async_call(
         DOMAIN,
         "add_meal",
@@ -271,7 +271,8 @@ async def test_ingredient_search_returns_results_to_service_caller(hass) -> None
     )
     stored_meal = await hass.async_add_executor_job(database.get_meal, "Rührei")
     assert stored_meal["ingredients"]["Ei"]["weight_per_unit_g"] == 60
-    assert stored_meal["ingredients"]["Ei"]["usda_fdc_id"] == 123
+    assert stored_meal["ingredients"]["Ei"]["nutrition_source"] == "usda"
+    assert stored_meal["ingredients"]["Ei"]["nutrition_id"] == 123
     assert any(meal["name"] == "Rührei" for meal in coordinator.data["meals"])
 
     today = dt_util.now().date()
@@ -303,6 +304,136 @@ async def test_ingredient_search_returns_results_to_service_caller(hass) -> None
     )
     assert "breakfast" not in plan_after_delete.get(today.isoformat(), {})
     assert all(meal["name"] != "Rührei" for meal in coordinator.data["meals"])
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+
+@pytest.mark.asyncio
+async def test_bls_search_uses_local_database(hass) -> None:
+    entry = MockConfigEntry(domain=DOMAIN, data={"api_key": ""})
+    entry.add_to_hass(hass)
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    database = hass.data[DOMAIN][entry.entry_id]["database"]
+    await hass.async_add_executor_job(database.initialize)
+    with database._connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO bls_foods
+                (code, name, name_en, calories, protein, fat, carbs)
+            VALUES ('C131000', 'Haferflocken', 'Oat flakes', 348, 13.22, 6.65, 58.7)
+            """
+        )
+    response = await hass.services.async_call(
+        DOMAIN,
+        "search_ingredient",
+        {"query": "hafer"},
+        blocking=True,
+        return_response=True,
+    )
+
+    assert response["source"] == "bls"
+    assert response["results"][0]["bls_code"] == "C131000"
+    assert response["results"][0]["nutrition"]["calories"] == 348
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+
+@pytest.mark.asyncio
+async def test_recipe_search_returns_importable_results(hass, monkeypatch) -> None:
+    import custom_components.weekly_meal_planner as integration_module
+
+    async def mock_search_recipes(session, query):
+        assert query == "chicken"
+        return [
+            {
+                "id": "52795",
+                "name": "Chicken Handi",
+                "category": "Chicken",
+                "area": "Indian",
+                "instructions": "Cook chicken.",
+                "source_url": "https://example.org/recipe",
+                "image_url": "",
+                "ingredients": [{"name": "Chicken", "measure": "1.2 kg"}],
+                "source": "TheMealDB",
+            }
+        ]
+
+    monkeypatch.setattr(integration_module, "search_recipes", mock_search_recipes)
+    entry = MockConfigEntry(domain=DOMAIN, data={"api_key": ""})
+    entry.add_to_hass(hass)
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    response = await hass.services.async_call(
+        DOMAIN,
+        "search_recipe",
+        {"query": "chicken"},
+        blocking=True,
+        return_response=True,
+    )
+
+    assert response["results"][0]["name"] == "Chicken Handi"
+    assert response["results"][0]["ingredients"][0]["measure"] == "1.2 kg"
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+
+@pytest.mark.asyncio
+async def test_add_meal_saves_bls_nutrition_and_recipe_details(hass) -> None:
+    entry = MockConfigEntry(domain=DOMAIN, data={"api_key": ""})
+    entry.add_to_hass(hass)
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    database = hass.data[DOMAIN][entry.entry_id]["database"]
+    with database._connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO bls_foods
+                (code, name, name_en, calories, protein, fat, carbs)
+            VALUES ('C131000', 'Haferflocken', 'Oat flakes', 348, 13.22, 6.65, 58.7)
+            """
+        )
+
+    await hass.services.async_call(
+        DOMAIN,
+        "add_meal",
+        {
+            "name": "Haferbrei",
+            "meal_type": "breakfast",
+            "servings": 2,
+            "ingredients": {
+                "Haferflocken": {
+                    "amount": 100,
+                    "unit": "g",
+                    "bls_code": "C131000",
+                }
+            },
+            "instructions": "Mit Milch aufkochen.",
+            "source_url": "https://example.org/haferbrei",
+            "source_name": "TheMealDB",
+        },
+        blocking=True,
+    )
+
+    meal = await hass.async_add_executor_job(database.get_meal, "Haferbrei")
+    ingredient = meal["ingredients"]["Haferflocken"]
+    assert ingredient["nutrition_per_100g"]["calories"] == 348
+    assert ingredient["nutrition_source"] == "bls"
+    details = await hass.services.async_call(
+        DOMAIN,
+        "get_meal_details",
+        {"name": "Haferbrei"},
+        blocking=True,
+        return_response=True,
+    )
+    assert details["instructions"] == "Mit Milch aufkochen."
+    assert details["source_name"] == "TheMealDB"
+    assert details["source_url"] == "https://example.org/haferbrei"
 
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()

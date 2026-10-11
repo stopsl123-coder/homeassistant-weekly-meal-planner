@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import sqlite3
+import io
 import sys
 import tempfile
 import types
 import unittest
+import zipfile
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 COMPONENT_PATH = (
     Path(__file__).resolve().parents[1]
@@ -19,6 +22,7 @@ test_package.__path__ = [str(COMPONENT_PATH)]
 sys.modules[PACKAGE_NAME] = test_package
 
 from weekly_meal_planner_test_package.database import MealPlannerDatabase
+from weekly_meal_planner_test_package.bls import parse_bls_archive
 from weekly_meal_planner_test_package.mealplanner import (
     build_dashboard_data,
     calculate_meal_nutrition,
@@ -26,6 +30,58 @@ from weekly_meal_planner_test_package.mealplanner import (
     generate_shopping_list,
     generate_week_plan,
 )
+from weekly_meal_planner_test_package.recipe_api import parse_recipe_response
+
+
+def _minimal_bls_archive() -> bytes:
+    shared_strings = [
+        "BLS Code",
+        "Lebensmittelbezeichnung",
+        "Food name",
+        "C131000",
+        "Haferflocken",
+        "Oat flakes",
+    ]
+    shared_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        + "".join(f"<si><t>{escape(value)}</t></si>" for value in shared_strings)
+        + "</sst>"
+    )
+    worksheet_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+ <sheetData>
+  <row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c>
+   <c r="C1" t="s"><v>2</v></c></row>
+  <row r="2"><c r="A2" t="s"><v>3</v></c><c r="B2" t="s"><v>4</v></c>
+   <c r="C2" t="s"><v>5</v></c><c r="G2"><v>348</v></c>
+   <c r="M2"><v>13.22</v></c><c r="P2"><v>6.65</v></c>
+   <c r="S2"><v>58.7</v></c></row>
+ </sheetData>
+</worksheet>"""
+    workbook_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+ xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+ <sheets><sheet name="BLS" sheetId="1" r:id="rId1"/></sheets>
+</workbook>"""
+    relationships_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+ <Relationship Id="rId1" Target="worksheets/sheet1.xml"/>
+</Relationships>"""
+
+    workbook_buffer = io.BytesIO()
+    with zipfile.ZipFile(workbook_buffer, "w") as workbook:
+        workbook.writestr("xl/sharedStrings.xml", shared_xml)
+        workbook.writestr("xl/workbook.xml", workbook_xml)
+        workbook.writestr("xl/_rels/workbook.xml.rels", relationships_xml)
+        workbook.writestr("xl/worksheets/sheet1.xml", worksheet_xml)
+    archive_buffer = io.BytesIO()
+    with zipfile.ZipFile(archive_buffer, "w") as archive:
+        archive.writestr(
+            "BLS_4_0_2025_DE/BLS_4_0_Daten_2025_DE.xlsx",
+            workbook_buffer.getvalue(),
+        )
+    return archive_buffer.getvalue()
 
 
 class MealPlannerDatabaseTests(unittest.TestCase):
@@ -58,6 +114,9 @@ class MealPlannerDatabaseTests(unittest.TestCase):
                 "meal_type": "lunch",
                 "servings": 1,
                 "ingredients": {"Rice": {"amount": 100, "unit": "g"}},
+                "instructions": "",
+                "source_url": "",
+                "source_name": "",
             },
         )
 
@@ -74,6 +133,23 @@ class MealPlannerDatabaseTests(unittest.TestCase):
         self.assertEqual(meals[0]["meal_type"], "dinner")
         self.assertEqual(meals[0]["servings"], 4)
         self.assertEqual(meals[0]["ingredients"]["Rice"]["amount"], 200)
+
+    def test_recipe_details_and_source_are_persisted(self) -> None:
+        self.database.add_meal(
+            "Linsencurry",
+            "dinner",
+            4,
+            {"Linsen": {"amount": 300, "unit": "g"}},
+            "Linsen garen.",
+            "https://example.org/linsencurry",
+            "TheMealDB",
+        )
+
+        meal = self.database.get_meal("Linsencurry")
+
+        self.assertEqual(meal["instructions"], "Linsen garen.")
+        self.assertEqual(meal["source_url"], "https://example.org/linsencurry")
+        self.assertEqual(meal["source_name"], "TheMealDB")
 
     def test_deleting_recipe_removes_it_from_saved_plans(self) -> None:
         self.database.add_meal(
@@ -161,6 +237,9 @@ class MealPlannerDatabaseTests(unittest.TestCase):
                 "ingredients": {"Beans": {"amount": 300, "unit": "g"}},
                 "meal_type": "dinner",
                 "servings": 1,
+                "instructions": "",
+                "source_url": "",
+                "source_name": "",
             },
         )
 
@@ -196,6 +275,97 @@ class MealPlannerDatabaseTests(unittest.TestCase):
             connection.close()
 
         self.assertIsNone(self.database.get_cached_nutrition(42))
+
+    def test_bls_archive_parser_reads_german_food_and_nutrients(self) -> None:
+        self.assertEqual(
+            list(parse_bls_archive(_minimal_bls_archive())),
+            [
+                {
+                    "code": "C131000",
+                    "name": "Haferflocken",
+                    "name_en": "Oat flakes",
+                    "calories": 348.0,
+                    "protein": 13.22,
+                    "fat": 6.65,
+                    "carbs": 58.7,
+                }
+            ],
+        )
+
+    def test_incomplete_bls_import_keeps_existing_foods(self) -> None:
+        connection = sqlite3.connect(self.database_path)
+        try:
+            connection.execute(
+                """
+                INSERT INTO bls_foods
+                    (code, name, name_en, calories, protein, fat, carbs)
+                VALUES ('C131000', 'Haferflocken', 'Oat flakes', 348, 13.22, 6.65, 58.7)
+                """
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        with self.assertRaisesRegex(sqlite3.DatabaseError, "BLS-Import unvollständig"):
+            self.database.import_bls_archive(_minimal_bls_archive())
+
+        self.assertTrue(self.database.has_bls_data())
+        self.assertEqual(
+            self.database.search_bls_foods("oat")[0]["bls_code"], "C131000"
+        )
+
+    def test_bls_search_matches_german_and_english_food_names(self) -> None:
+        connection = sqlite3.connect(self.database_path)
+        try:
+            connection.executemany(
+                """
+                INSERT INTO bls_foods
+                    (code, name, name_en, calories, protein, fat, carbs)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    ("C131000", "Haferflocken", "Oat flakes", 348, 13.22, 6.65, 58.7),
+                    ("C131001", "Hafer ganzes Korn", "Oat grain", 343, 11.3, 7.09, 55),
+                ],
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        result = self.database.search_bls_foods("OAT")
+
+        self.assertEqual([food["bls_code"] for food in result], ["C131001", "C131000"])
+        self.assertEqual(result[1]["nutrition"]["calories"], 348)
+
+    def test_recipe_response_includes_instructions_and_measured_ingredients(self) -> None:
+        recipes = parse_recipe_response(
+            {
+                "meals": [
+                    {
+                        "idMeal": "52795",
+                        "strMeal": "Chicken Handi",
+                        "strCategory": "Chicken",
+                        "strArea": "Indian",
+                        "strInstructions": "Heat oil.\r\nAdd chicken.",
+                        "strSource": "https://example.org/recipe",
+                        "strIngredient1": "Chicken",
+                        "strMeasure1": "1.2 kg",
+                        "strIngredient2": "Salt",
+                        "strMeasure2": "To taste",
+                    }
+                ]
+            }
+        )
+
+        self.assertEqual(recipes[0]["name"], "Chicken Handi")
+        self.assertEqual(recipes[0]["instructions"], "Heat oil.\nAdd chicken.")
+        self.assertEqual(
+            recipes[0]["ingredients"],
+            [
+                {"name": "Chicken", "measure": "1.2 kg"},
+                {"name": "Salt", "measure": "To taste"},
+            ],
+        )
 
 
 class MealPlannerLogicTests(unittest.TestCase):
@@ -233,7 +403,14 @@ class MealPlannerLogicTests(unittest.TestCase):
         )
         self.assertEqual(
             dashboard["meals"],
-            [{"name": "Soup", "meal_type": "lunch", "calories": 80}],
+            [
+                {
+                    "name": "Soup",
+                    "meal_type": "lunch",
+                    "source_name": "",
+                    "calories": 80,
+                }
+            ],
         )
 
     def test_daily_calorie_total_includes_all_meal_types(self) -> None:

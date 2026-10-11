@@ -8,6 +8,7 @@ import math
 import sqlite3
 from datetime import date, timedelta
 from typing import Any
+from urllib.parse import urlsplit
 
 import aiohttp
 import voluptuous as vol
@@ -22,12 +23,14 @@ from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 from .database import MealPlannerDatabase
+from .bls import BLS_DATA_URL
 from .mealplanner import (
     build_dashboard_data,
     generate_week_plan,
     monday_for,
 )
 from .nutrition_api import search_nutrition_for_item
+from .recipe_api import search_recipes
 
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS = [Platform.SENSOR, Platform.CALENDAR]
@@ -38,6 +41,8 @@ SERVICE_NAMES = (
     "generate_shopping_list",
     "get_week_data",
     "search_ingredient",
+    "search_recipe",
+    "get_meal_details",
     "set_planned_meal",
 )
 MEAL_TYPES = {"breakfast", "lunch", "dinner"}
@@ -122,6 +127,11 @@ def _validate_ingredients(value: Any) -> dict[str, dict[str, Any]]:
         unit = details.get("unit")
         fdc_id = details.get("fdc_id")
         weight_per_unit_g = details.get("weight_per_unit_g")
+        bls_code = details.get("bls_code")
+        if fdc_id is not None and bls_code is not None:
+            raise vol.Invalid(
+                f"Ingredient '{name}' cannot have both USDA and BLS food IDs."
+            )
         if (
             isinstance(amount, bool)
             or not isinstance(amount, (int, float))
@@ -135,6 +145,10 @@ def _validate_ingredients(value: Any) -> dict[str, dict[str, Any]]:
             isinstance(fdc_id, bool) or not isinstance(fdc_id, int) or fdc_id <= 0
         ):
             raise vol.Invalid(f"Ingredient '{name}' has an invalid USDA food ID.")
+        if bls_code is not None and (
+            not isinstance(bls_code, str) or not bls_code.strip() or len(bls_code) > 20
+        ):
+            raise vol.Invalid(f"Ingredient '{name}' has an invalid BLS food code.")
         if weight_per_unit_g is not None and (
             isinstance(weight_per_unit_g, bool)
             or not isinstance(weight_per_unit_g, (int, float))
@@ -148,6 +162,7 @@ def _validate_ingredients(value: Any) -> dict[str, dict[str, Any]]:
             "amount": float(amount),
             "unit": unit.strip(),
             **({"fdc_id": fdc_id} if fdc_id is not None else {}),
+            **({"bls_code": bls_code.strip()} if bls_code is not None else {}),
             **(
                 {"weight_per_unit_g": float(weight_per_unit_g)}
                 if weight_per_unit_g is not None
@@ -155,6 +170,16 @@ def _validate_ingredients(value: Any) -> dict[str, dict[str, Any]]:
             ),
         }
     return validated
+
+
+def _validate_https_url(value: str) -> str:
+    url = value.strip()
+    if not url:
+        return ""
+    parsed = urlsplit(url)
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise vol.Invalid("Recipe source URL must use HTTPS.")
+    return url
 
 
 def _coordinator_settings(entry: ConfigEntry) -> dict[str, Any]:
@@ -173,9 +198,19 @@ ADD_MEAL_SCHEMA = vol.Schema(
             vol.Coerce(int), vol.Range(min=1, max=100)
         ),
         vol.Required("ingredients"): _validate_ingredients,
+        vol.Optional("instructions", default=""): vol.All(str, vol.Length(max=20_000)),
+        vol.Optional("source_url", default=""): vol.All(
+            str, vol.Length(max=2_000), _validate_https_url
+        ),
+        vol.Optional("source_name", default=""): vol.All(str, vol.Length(max=100)),
     }
 )
 DELETE_MEAL_SCHEMA = vol.Schema(
+    {
+        vol.Required("name"): vol.All(str, str.strip, vol.Length(min=1, max=100)),
+    }
+)
+MEAL_DETAILS_SCHEMA = vol.Schema(
     {
         vol.Required("name"): vol.All(str, str.strip, vol.Length(min=1, max=100)),
     }
@@ -184,7 +219,13 @@ EMPTY_SCHEMA = vol.Schema({})
 SEARCH_INGREDIENT_SCHEMA = vol.Schema(
     {
         vol.Required("query"): vol.All(str, str.strip, vol.Length(min=1, max=100)),
+        vol.Optional("source", default="bls"): vol.In({"bls", "usda"}),
         vol.Optional("force_refresh", default=False): cv.boolean,
+    }
+)
+SEARCH_RECIPE_SCHEMA = vol.Schema(
+    {
+        vol.Required("query"): vol.All(str, str.strip, vol.Length(min=1, max=100)),
     }
 )
 SET_PLANNED_MEAL_SCHEMA = vol.Schema(
@@ -252,7 +293,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         "database": database,
         "coordinator": coordinator,
-        "api_key": entry.options.get("api_key", entry.data["api_key"]),
+        "api_key": entry.options.get("api_key", entry.data.get("api_key", "")),
     }
 
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
@@ -283,6 +324,43 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
     coordinator: MealPlannerCoordinator = data["coordinator"]
     api_key: str = data["api_key"]
     session = async_get_clientsession(hass)
+    bls_import_lock = asyncio.Lock()
+
+    async def ensure_bls_loaded() -> None:
+        if await hass.async_add_executor_job(database.has_bls_data):
+            return
+        async with bls_import_lock:
+            if await hass.async_add_executor_job(database.has_bls_data):
+                return
+            try:
+                async with session.get(
+                    BLS_DATA_URL,
+                    timeout=aiohttp.ClientTimeout(total=180),
+                ) as response:
+                    response.raise_for_status()
+                    if (
+                        response.content_length is not None
+                        and response.content_length > 60_000_000
+                    ):
+                        raise HomeAssistantError(
+                            "BLS-Download überschreitet die erlaubte Dateigröße."
+                        )
+                    payload = await response.read()
+                if len(payload) > 60_000_000:
+                    raise HomeAssistantError(
+                        "BLS-Download überschreitet die erlaubte Dateigröße."
+                    )
+                imported = await hass.async_add_executor_job(
+                    database.import_bls_archive, payload
+                )
+            except HomeAssistantError:
+                raise
+            except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, sqlite3.Error) as err:
+                _LOGGER.warning("BLS-Daten konnten nicht geladen werden: %s", err)
+                raise HomeAssistantError(
+                    "BLS-Daten konnten nicht geladen werden. Internetverbindung prüfen."
+                ) from err
+            _LOGGER.info("BLS 4.0 geladen: %s Lebensmittel", imported)
 
     async def search_and_cache(
         query: str, force_refresh: bool = False
@@ -308,21 +386,74 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
     async def handle_search_ingredient(call: ServiceCall) -> dict[str, Any]:
         query = call.data["query"]
+        if call.data["source"] == "bls":
+            await ensure_bls_loaded()
+            results = await hass.async_add_executor_job(
+                database.search_bls_foods, query
+            )
+            return {"query": query, "source": "bls", "results": results}
+        if not api_key:
+            raise HomeAssistantError(
+                "Für USDA-Suche API-Schlüssel in Integration-Optionen eintragen."
+            )
         results = await search_and_cache(query, call.data["force_refresh"])
         if not results:
             raise HomeAssistantError(
                 f"USDA fand keine verwendbaren Nährwerte für „{query}“."
             )
         await coordinator.async_request_refresh()
+        return {"query": query, "source": "usda", "results": results}
+
+    async def handle_search_recipe(call: ServiceCall) -> dict[str, Any]:
+        query = call.data["query"]
+        try:
+            results = await search_recipes(session, query)
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as err:
+            _LOGGER.warning("Rezeptsuche fehlgeschlagen: %s", err)
+            raise HomeAssistantError(
+                "TheMealDB-Suche fehlgeschlagen. Internetverbindung prüfen."
+            ) from err
         return {"query": query, "results": results}
+
+    async def handle_get_meal_details(call: ServiceCall) -> dict[str, Any]:
+        meal = await hass.async_add_executor_job(
+            database.get_meal, call.data["name"]
+        )
+        if meal is None:
+            raise HomeAssistantError(
+                f"Gericht „{call.data['name']}“ wurde nicht gefunden."
+            )
+        return {
+            "name": meal["name"],
+            "instructions": meal["instructions"],
+            "source_url": meal["source_url"],
+            "source_name": meal["source_name"],
+        }
 
     async def handle_add_meal(call: ServiceCall) -> None:
         ingredients = call.data["ingredients"]
         names = list(ingredients)
         nutrition_values = []
+        nutrition_ids: list[tuple[str, str | int]] = []
         for name, details in ingredients.items():
+            bls_code = details.get("bls_code")
+            if bls_code is not None:
+                food = await hass.async_add_executor_job(
+                    database.get_bls_food, bls_code
+                )
+                if food is None:
+                    raise HomeAssistantError(
+                        f"BLS-Auswahl für „{name}“ wurde nicht gefunden. Zutat erneut suchen."
+                    )
+                nutrition_values.append(food["nutrition"])
+                nutrition_ids.append(("bls", bls_code))
+                continue
             fdc_id = details.get("fdc_id")
             if fdc_id is None:
+                if not api_key:
+                    raise HomeAssistantError(
+                        "Bitte für jede Zutat einen BLS-Treffer auswählen."
+                    )
                 matches = await search_and_cache(name)
                 if not matches:
                     raise HomeAssistantError(
@@ -331,6 +462,7 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
                 selected = matches[0]
                 nutrition_values.append(selected["nutrition"])
                 details["fdc_id"] = selected["fdc_id"]
+                nutrition_ids.append(("usda", selected["fdc_id"]))
                 continue
             cached = await hass.async_add_executor_job(
                 database.get_cached_nutrition, fdc_id
@@ -340,10 +472,11 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
                     f"USDA-Auswahl für „{name}“ ist abgelaufen. Zutat erneut suchen."
                 )
             nutrition_values.append(cached["nutrition"])
+            nutrition_ids.append(("usda", fdc_id))
 
         enriched: dict[str, dict[str, Any]] = {}
-        for name, details, nutrition in zip(
-            names, ingredients.values(), nutrition_values, strict=True
+        for name, details, nutrition, (source, identifier) in zip(
+            names, ingredients.values(), nutrition_values, nutrition_ids, strict=True
         ):
             enriched[name] = {
                 "amount": details["amount"],
@@ -354,7 +487,8 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
                     else {}
                 ),
                 "nutrition_per_100g": nutrition,
-                "usda_fdc_id": details["fdc_id"],
+                "nutrition_source": source,
+                "nutrition_id": identifier,
             }
 
         await hass.async_add_executor_job(
@@ -363,6 +497,9 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
             call.data["meal_type"],
             call.data["servings"],
             enriched,
+            call.data["instructions"],
+            call.data["source_url"],
+            call.data["source_name"],
         )
         await coordinator.async_refresh()
 
@@ -494,4 +631,18 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
         handle_search_ingredient,
         schema=SEARCH_INGREDIENT_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "search_recipe",
+        handle_search_recipe,
+        schema=SEARCH_RECIPE_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "get_meal_details",
+        handle_get_meal_details,
+        schema=MEAL_DETAILS_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
     )

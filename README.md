@@ -32,8 +32,8 @@ berechnet.
 2. **Weekly Meal Planner** installieren und Home Assistant neu starten.
 3. Unter **Einstellungen → Geräte & Dienste → Integration hinzufügen** nach
    **Weekly Meal Planner** suchen.
-4. USDA FoodData Central API-Schlüssel eingeben. Kostenlosen Schlüssel unter
-   <https://fdc.nal.usda.gov/api-key-signup.html> anfordern.
+4. USDA FoodData Central API-Schlüssel optional eintragen. BLS 4.0 funktioniert
+   ohne Schlüssel; USDA kannst du als alternative Datenquelle auswählen.
 5. Lovelace-Kartendatei
    [`weekly_meal_planner.js`](www/weekly_meal_planner/weekly_meal_planner.js)
    nach `/config/www/weekly_meal_planner.js` kopieren.
@@ -63,19 +63,27 @@ beziehen sich weiterhin auf die aktuelle Woche.
 
 ## Nährwerte und Datenquellen
 
-Beim Suchen und Speichern von Zutaten nutzt die Integration USDA FoodData
-Central. Die Zutatenbezeichnungen werden dazu an USDA übertragen. Nährwerte
-werden pro Portion berechnet. Wenn Einheit oder Nährwert fehlen, wird die
-Summe als unvollständig angezeigt statt geschätzt.
+Beim Suchen und Speichern von Zutaten nutzt die Integration standardmäßig den
+deutschen Bundeslebensmittelschlüssel (BLS) 4.0. USDA FoodData Central ist eine
+optionale alternative Datenquelle.
+Bei der ersten BLS-Suche lädt Home Assistant das offizielle Datenarchiv
+(ca. 14 MB) herunter und importiert es lokal in `/config/mealplanner.db`.
+Danach funktioniert die Suche lokal. BLS 4.0 umfasst 7.140 Lebensmittel und
+138 Nährstoffe; die Daten stehen unter CC BY 4.0. Quellenangabe:
+Max Rubner-Institut (2025), Bundeslebensmittelschlüssel 4.0, DOI
+[10.25826/Data20251217-134202-0](https://doi.org/10.25826/Data20251217-134202-0).
 
-Aktuell ist keine deutsche Zutaten- oder Fertiggerichte-Datenbank eingebunden.
-Open Food Facts eignet sich für verpackte Markenprodukte, aber nicht als
-verlässliche Rezeptdatenbank. Die Datenbank steht unter ODbL; bei einer
-Integration wären Quellenhinweis und Share-Alike-Pflichten zu beachten. Der
-deutsche Bundeslebensmittelschlüssel (BLS) ist fachlich passend für
-Lebensmittel-Nährwerte, wird aber lizenziert bereitgestellt; eine freie
-öffentliche API ist nicht dokumentiert. Fertiggericht-Rezeptdaten benötigen
-eine gesonderte Prüfung von API-Zugang und Nutzungsrechten.
+Die Rezeptsuche verwendet TheMealDB und zeigt Namen, Zutaten, Mengen,
+Zubereitung und Quelle. Importierte Mengen musst du prüfen; Angaben wie
+„to taste“ werden nicht geschätzt. Wähle für jede Zutat den passenden
+BLS-Nährwerttreffer, bevor du das Gericht speicherst. Die Zubereitung und
+Quellenangabe bleiben am gespeicherten Rezept.
+
+TheMealDB-Rezepte können englisch sein; der Suchdienst verlangt laut Anbieter
+Unterstützerstatus für öffentliche App-Store-Veröffentlichungen. Rezeptdaten
+werden nicht in die Integration gebündelt, sondern bei Bedarf von TheMealDB
+abgerufen. Für USDA-Suchen werden Zutatenbegriffe an USDA übertragen. Fehlen
+Einheit oder Nährwert, wird Summe als unvollständig angezeigt statt geschätzt.
 
 ## Home-Assistant-Entities
 
