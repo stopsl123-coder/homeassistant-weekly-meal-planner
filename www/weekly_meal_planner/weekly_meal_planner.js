@@ -155,6 +155,7 @@ class WeeklyMealPlannerCard extends HTMLElement {
     const select = this.querySelector("#meal_choice");
     const save = this.querySelector("#save_planned_meal");
     const deleteButton = this.querySelector("#delete_meal");
+    const editButton = this.querySelector("#edit_meal");
     const empty = this.querySelector("#meal_choice_empty");
     const ingredientsHeading = this.querySelector(
       "#saved_recipe_ingredients_heading",
@@ -194,6 +195,7 @@ class WeeklyMealPlannerCard extends HTMLElement {
     select.value = mealName || select.options[0]?.value || "";
     save.disabled = !select.value;
     deleteButton.disabled = !recipes.some((recipe) => recipe.name === select.value);
+    editButton.disabled = !recipes.some((recipe) => recipe.name === select.value);
     empty.hidden = candidates.length > 0;
     empty.textContent = `Noch keine gespeicherten Gerichte für ${labels[mealType]}.`;
     const dialogStatus = this.querySelector("#meal_dialog_status");
@@ -268,9 +270,84 @@ class WeeklyMealPlannerCard extends HTMLElement {
       deleteButton.disabled = !recipes.some(
         (recipe) => recipe.name === select.value,
       );
+      editButton.disabled = !recipes.some(
+        (recipe) => recipe.name === select.value,
+      );
       showRecipeDetails();
     };
     dialog.showModal();
+  }
+
+  async editSavedMeal(mealName) {
+    if (!mealName) return;
+    this.openRecipeDialog();
+    const status = this.querySelector("#recipe_dialog_status");
+    status.textContent = "Gespeichertes Gericht wird geladen.";
+    try {
+      const result = await this._hass.callService(
+        "weekly_meal_planner",
+        "get_meal_details",
+        { name: mealName },
+        undefined,
+        false,
+        true,
+      );
+      const meal = result?.response;
+      if (!meal) throw new Error("Gerichtdetails konnten nicht geladen werden.");
+
+      this._editingMealName = meal.name;
+      this.querySelector("#meal_name").value = meal.name;
+      this.querySelector("#meal_name").readOnly = true;
+      this.querySelector("#servings").value = String(meal.servings || 1);
+      this.querySelector("#meal_type").value = meal.meal_type;
+      this.querySelector("#recipe_instructions").value = meal.instructions || "";
+      this.querySelector("#recipe_source_url").value = meal.source_url || "";
+      this.querySelector("#recipe_source_name").value = meal.source_name || "";
+      this.querySelector("#save_meal").textContent = "Änderungen speichern";
+
+      const ingredientsContainer = this.querySelector("#ingredients_container");
+      for (const [name, ingredient] of Object.entries(meal.ingredients || {})) {
+        this.querySelector("#add_ingredient").click();
+        const row = ingredientsContainer.lastElementChild;
+        row.querySelector('input[aria-label="Zutat"]').value = name;
+        row.querySelector('input[aria-label="Menge"]').value = ingredient.amount;
+        const unit = row.querySelector('select[aria-label="Einheit"]');
+        unit.value = ingredient.unit;
+        unit.dispatchEvent(new Event("change"));
+        const weight = row.querySelector(
+          'input[aria-label="Gewicht pro Stück in Gramm"]',
+        );
+        weight.value = ingredient.weight_per_unit_g ?? "";
+
+        const source =
+          ingredient.nutrition_source ||
+          (ingredient.bls_code != null ? "bls" : "usda");
+        const identifier =
+          ingredient.nutrition_id ??
+          ingredient.bls_code ??
+          ingredient.fdc_id;
+        if (identifier == null || !ingredient.nutrition_per_100g) continue;
+        const resultItem = {
+          description: `${name} (gespeicherte Auswahl)`,
+          nutrition: ingredient.nutrition_per_100g,
+          ...(source === "bls"
+            ? { bls_code: identifier }
+            : { fdc_id: Number(identifier) }),
+        };
+        row._nutritionSearch = {
+          query: name,
+          source,
+          results: [resultItem],
+        };
+        this.querySelector("#nutrition_source").value = source;
+        this.renderNutritionMatches(row, row._nutritionSearch);
+      }
+      status.textContent =
+        "Gericht geladen. Zutaten und BLS-Zuordnungen anpassen und speichern.";
+    } catch (error) {
+      status.textContent =
+        error.message || "Gericht konnte nicht zum Bearbeiten geladen werden.";
+    }
   }
 
   async savePlannedMeal(mealName) {
@@ -337,6 +414,7 @@ class WeeklyMealPlannerCard extends HTMLElement {
     typeSelect.disabled = Boolean(day);
     this._pendingMealSlot = day ? { day, mealType } : undefined;
     this.querySelector("#meal_name").value = "";
+    this.querySelector("#meal_name").readOnly = false;
     this.querySelector("#servings").value = "2";
     this.querySelector("#recipe_instructions").value = "";
     this.querySelector("#recipe_source_url").value = "";
@@ -345,6 +423,8 @@ class WeeklyMealPlannerCard extends HTMLElement {
     this.querySelector("#recipe_search_query").value = "";
     this.querySelector("#recipe_search_results").replaceChildren();
     this.querySelector("#recipe_search_status").textContent = "";
+    this.querySelector("#save_meal").textContent = "Gericht speichern";
+    this._editingMealName = undefined;
     this.querySelector("#nutrition_source").value = "bls";
     dialog.showModal();
     this.querySelector("#meal_name").focus();
@@ -790,6 +870,7 @@ class WeeklyMealPlannerCard extends HTMLElement {
           <p id="meal_dialog_status" role="status" aria-live="polite"></p>
           <div class="dialog-actions">
             <button id="delete_meal" type="button">Gericht löschen</button>
+            <button id="edit_meal" type="button">Gericht bearbeiten</button>
             <button id="new_meal_for_slot" type="button">Neues Gericht anlegen</button>
             <button id="save_planned_meal" type="button">In Wochenplan übernehmen</button>
             <button id="close_meal_dialog" type="button">Abbrechen</button>
@@ -871,6 +952,8 @@ class WeeklyMealPlannerCard extends HTMLElement {
       this.savePlannedMeal(this.querySelector("#meal_choice").value);
     this.querySelector("#delete_meal").onclick = () =>
       this.deleteMeal(this.querySelector("#meal_choice").value);
+    this.querySelector("#edit_meal").onclick = () =>
+      this.editSavedMeal(this.querySelector("#meal_choice").value);
     this.querySelector("#close_recipe_dialog").onclick = () =>
       this.querySelector("#recipe_dialog").close();
     this.querySelector("#nutrition_source").onchange = () => {
@@ -1015,7 +1098,8 @@ class WeeklyMealPlannerCard extends HTMLElement {
     };
 
     this.querySelector("#save_meal").onclick = async () => {
-      const name = this.querySelector("#meal_name").value.trim();
+      const name =
+        this._editingMealName || this.querySelector("#meal_name").value.trim();
       const mealType = this.querySelector("#meal_type").value;
       const servings = Number(this.querySelector("#servings").value);
       const ingredients = {};
@@ -1106,6 +1190,7 @@ class WeeklyMealPlannerCard extends HTMLElement {
         }
       }
       this._pendingMealSlot = undefined;
+      this._editingMealName = undefined;
       setStatus(
         slot
           ? "Gericht gespeichert und im Wochenplan eingetragen."

@@ -174,6 +174,11 @@ wegzuschalten.
 Nach Bestätigung wird es aus der Rezeptdatenbank und allen Wochenplan-Tagen
 entfernt.
 
+Wähle ein gespeichertes Gericht und klicke auf **Gericht bearbeiten**, um
+Zutaten, Mengen, Nährwertzuordnungen, Portionen oder Zubereitung zu ändern.
+Der Name bleibt dabei unverändert; beim Speichern werden bestehende
+Wochenplaneinträge für dieses Gericht beibehalten.
+
 Neben geplanten Gerichten stehen berechnete kcal pro Portion; am Tag steht
 zusätzlich die Summe aller geplanten Mahlzeiten. Summe basiert auf Nährwerten
 aller Zutaten geteilt durch Rezeptportionen. Fehlen Nährwerte oder

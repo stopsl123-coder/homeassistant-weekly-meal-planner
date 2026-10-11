@@ -65,7 +65,7 @@ search_recipe:
       example: "Kartoffelsuppe"
 
 get_meal_details:
-  description: Gibt Zubereitung und Herkunft eines gespeicherten Gerichts zurück.
+  description: Gibt Zutaten, Portionen, Zubereitung und Herkunft eines gespeicherten Gerichts zurück.
   fields:
     name:
       description: Name des gespeicherten Gerichts
