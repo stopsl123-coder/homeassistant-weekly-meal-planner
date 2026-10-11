@@ -11,6 +11,10 @@ import aiohttp
 WIKIBOOKS_API_URL = "https://de.wikibooks.org/w/api.php"
 WIKIBOOKS_PAGE_URL = "https://de.wikibooks.org/wiki/"
 WIKIBOOKS_SOURCE_NAME = "Wikibooks Kochbuch"
+WIKIBOOKS_USER_AGENT = (
+    "WeeklyMealPlanner/1.7.3 "
+    "(+https://github.com/stopsl123-coder/homeassistant-weekly-meal-planner)"
+)
 _RECIPE_TITLE_PREFIX = "Kochbuch/ "
 _HEADING = re.compile(r"^==+\s*(.*?)\s*==+\s*$", re.MULTILINE)
 _QUANTITY = re.compile(
@@ -32,12 +36,13 @@ async def search_recipes(
         params={
             "action": "query",
             "list": "search",
-            "srsearch": f'intitle:Kochbuch/ intitle:"{query}"',
+            "srsearch": query,
             "srnamespace": 0,
             "srlimit": 10,
             "format": "json",
         },
         timeout=timeout,
+        headers={"User-Agent": WIKIBOOKS_USER_AGENT},
     ) as response:
         response.raise_for_status()
         search_data = await response.json()
@@ -69,6 +74,7 @@ async def search_recipes(
             "format": "json",
         },
         timeout=timeout,
+        headers={"User-Agent": WIKIBOOKS_USER_AGENT},
     ) as response:
         response.raise_for_status()
         content_data = await response.json()

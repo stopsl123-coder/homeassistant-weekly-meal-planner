@@ -395,9 +395,11 @@ Teig verrühren und backen.""",
         class Session:
             def __init__(self) -> None:
                 self.params = []
+                self.headers = []
 
-            def get(self, url: str, *, params: dict, timeout):
+            def get(self, url: str, *, params: dict, timeout, headers: dict):
                 self.params.append(params)
+                self.headers.append(headers)
                 if params.get("list") == "search":
                     return Response(
                         {
@@ -442,9 +444,15 @@ Kartoffeln kochen."""
         recipes = asyncio.run(search_recipes(session, "Kartoffelsuppe"))
 
         self.assertEqual(len(session.params), 2)
+        self.assertEqual(len(session.headers), 2)
         self.assertEqual(
-            session.params[0]["srsearch"],
-            'intitle:Kochbuch/ intitle:"Kartoffelsuppe"',
+            session.headers[0]["User-Agent"],
+            "WeeklyMealPlanner/1.7.3 "
+            "(+https://github.com/stopsl123-coder/homeassistant-weekly-meal-planner)",
+        )
+        self.assertEqual(session.headers[0], session.headers[1])
+        self.assertEqual(
+            session.params[0]["srsearch"], "Kartoffelsuppe"
         )
         self.assertEqual(recipes[0]["name"], "Passierte Kartoffelsuppe mit Lachsstreifen")
         self.assertEqual(
