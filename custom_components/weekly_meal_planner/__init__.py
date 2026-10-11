@@ -425,6 +425,7 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
             )
         return {
             "name": meal["name"],
+            "ingredients": meal["ingredients"],
             "instructions": meal["instructions"],
             "source_url": meal["source_url"],
             "source_name": meal["source_name"],

@@ -429,6 +429,8 @@ async def test_add_meal_saves_bls_nutrition_and_recipe_details(hass) -> None:
         blocking=True,
         return_response=True,
     )
+    assert details["ingredients"]["Haferflocken"]["amount"] == 100
+    assert details["ingredients"]["Haferflocken"]["unit"] == "g"
     assert details["instructions"] == "Mit Milch aufkochen."
     assert details["source_name"] == "Wikibooks Kochbuch"
     assert details["source_url"] == "https://example.org/haferbrei"

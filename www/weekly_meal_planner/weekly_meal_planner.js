@@ -156,6 +156,10 @@ class WeeklyMealPlannerCard extends HTMLElement {
     const save = this.querySelector("#save_planned_meal");
     const deleteButton = this.querySelector("#delete_meal");
     const empty = this.querySelector("#meal_choice_empty");
+    const ingredientsHeading = this.querySelector(
+      "#saved_recipe_ingredients_heading",
+    );
+    const ingredientsList = this.querySelector("#saved_recipe_ingredients");
     const instructions = this.querySelector("#saved_recipe_instructions");
     const sourceLink = this.querySelector("#saved_recipe_source");
     this.querySelector("#meal_dialog_title").textContent =
@@ -197,6 +201,9 @@ class WeeklyMealPlannerCard extends HTMLElement {
     let detailsRequest = 0;
     const showRecipeDetails = async () => {
       const request = ++detailsRequest;
+      ingredientsHeading.hidden = true;
+      ingredientsList.replaceChildren();
+      ingredientsList.hidden = true;
       instructions.textContent = "";
       instructions.hidden = true;
       sourceLink.hidden = true;
@@ -217,6 +224,18 @@ class WeeklyMealPlannerCard extends HTMLElement {
           throw new Error("Rezeptdetails konnten nicht geladen werden.");
         }
         if (request !== detailsRequest) return;
+        for (const [name, ingredient] of Object.entries(details.ingredients || {})) {
+          const item = document.createElement("li");
+          const amount = Number(ingredient?.amount);
+          const quantity =
+            Number.isFinite(amount) && ingredient?.unit
+              ? ` · ${amount.toLocaleString("de-DE")} ${ingredient.unit}`
+              : "";
+          item.textContent = `${name}${quantity}`;
+          ingredientsList.appendChild(item);
+        }
+        ingredientsList.hidden = !ingredientsList.childElementCount;
+        ingredientsHeading.hidden = !ingredientsList.childElementCount;
         instructions.textContent = details.instructions || "";
         instructions.hidden = !details.instructions;
         const sourceName = details.source_name;
@@ -705,6 +724,7 @@ class WeeklyMealPlannerCard extends HTMLElement {
         weekly-meal-planner-card dialog::backdrop { background: rgba(12, 18, 28, .58); backdrop-filter: blur(5px); }
         #meal_dialog label { display: block; margin: 12px 0 6px; color: var(--secondary-text-color); font-size: .82rem; font-weight: 700; }
         #meal_dialog select { width: 100%; }
+        #saved_recipe_ingredients { margin: 8px 0 14px; padding-left: 22px; color: var(--primary-text-color); font-size: .88rem; line-height: 1.6; }
         #saved_recipe_instructions { white-space: pre-wrap; max-height: 260px; overflow: auto; color: var(--secondary-text-color); font-size: .88rem; line-height: 1.5; }
         weekly-meal-planner-card .dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 18px; }
         #delete_meal { margin-right: auto; border-color: var(--error-color); color: var(--error-color); }
@@ -763,6 +783,8 @@ class WeeklyMealPlannerCard extends HTMLElement {
           <label for="meal_choice">Gespeichertes Gericht</label>
           <select id="meal_choice"></select>
           <p id="meal_choice_empty" hidden></p>
+          <h4 id="saved_recipe_ingredients_heading" hidden>Zutaten</h4>
+          <ul id="saved_recipe_ingredients" hidden></ul>
           <p id="saved_recipe_instructions" hidden></p>
           <a id="saved_recipe_source" hidden></a>
           <p id="meal_dialog_status" role="status" aria-live="polite"></p>
