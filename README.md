@@ -73,17 +73,15 @@ Danach funktioniert die Suche lokal. BLS 4.0 umfasst 7.140 Lebensmittel und
 Max Rubner-Institut (2025), Bundeslebensmittelschlüssel 4.0, DOI
 [10.25826/Data20251217-134202-0](https://doi.org/10.25826/Data20251217-134202-0).
 
-Die Rezeptsuche verwendet TheMealDB und zeigt Namen, Zutaten, Mengen,
-Zubereitung und Quelle. Importierte Mengen musst du prüfen; Angaben wie
-„to taste“ werden nicht geschätzt. Wähle für jede Zutat den passenden
-BLS-Nährwerttreffer, bevor du das Gericht speicherst. Die Zubereitung und
-Quellenangabe bleiben am gespeicherten Rezept.
-
-TheMealDB-Rezepte können englisch sein; der Suchdienst verlangt laut Anbieter
-Unterstützerstatus für öffentliche App-Store-Veröffentlichungen. Rezeptdaten
-werden nicht in die Integration gebündelt, sondern bei Bedarf von TheMealDB
-abgerufen. Für USDA-Suchen werden Zutatenbegriffe an USDA übertragen. Fehlen
-Einheit oder Nährwert, wird Summe als unvollständig angezeigt statt geschätzt.
+Die Rezeptsuche verwendet das deutschsprachige Wikibooks-Kochbuch. Rezepte
+werden bei Bedarf gesucht und nicht mit der Integration gebündelt. Zutaten,
+Zubereitung und Herkunft werden übernommen; Mengen und Zutaten musst du prüfen,
+weil Einträge unterschiedlich aufgebaut sein können. Wikibooks-Inhalte sind
+frei lizenziert; Lizenzhinweise der jeweiligen Originalseite beachten. Quelle
+bleibt am gespeicherten Gericht verlinkt.
+Wähle für jede Zutat den passenden BLS-Nährwerttreffer. Für USDA-Suchen werden
+Zutatenbegriffe an USDA übertragen. Fehlen Einheit oder Nährwert, wird Summe
+als unvollständig angezeigt statt geschätzt.
 
 ## Home-Assistant-Entities
 

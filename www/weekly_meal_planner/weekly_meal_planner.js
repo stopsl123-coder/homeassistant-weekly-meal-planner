@@ -222,7 +222,9 @@ class WeeklyMealPlannerCard extends HTMLElement {
         const sourceName = details.source_name;
         const sourceUrl =
           details.source_url ||
-          (sourceName === "TheMealDB" ? "https://www.themealdb.com/" : "");
+          (sourceName.startsWith("Wikibooks")
+            ? "https://de.wikibooks.org/wiki/Kochbuch"
+            : "");
         sourceLink.hidden = !sourceName && !sourceUrl;
         sourceLink.textContent = sourceName
           ? `Rezeptquelle: ${sourceName}`
@@ -338,7 +340,7 @@ class WeeklyMealPlannerCard extends HTMLElement {
       status.textContent = "Gerichtname eingeben.";
       return;
     }
-    status.textContent = "TheMealDB wird durchsucht.";
+    status.textContent = "Das deutsche Wikibooks-Kochbuch wird durchsucht.";
     try {
       const serviceResult = await this._hass.callService(
         "weekly_meal_planner",
@@ -350,7 +352,7 @@ class WeeklyMealPlannerCard extends HTMLElement {
       );
       const recipes = serviceResult?.response?.results;
       if (!Array.isArray(recipes)) {
-        throw new Error("TheMealDB lieferte ungültige Suchergebnisse.");
+        throw new Error("Wikibooks lieferte ungültige Suchergebnisse.");
       }
       if (!recipes.length) {
         status.textContent = "Keine passenden Gerichte gefunden.";
@@ -371,15 +373,19 @@ class WeeklyMealPlannerCard extends HTMLElement {
       }
     } catch (error) {
       status.textContent =
-        error.message || "TheMealDB-Suche fehlgeschlagen.";
+        error.message || "Wikibooks-Rezeptsuche fehlgeschlagen.";
     }
   }
 
   importRecipe(recipe) {
     this.querySelector("#meal_name").value = recipe.name || "";
+    this.querySelector("#servings").value = String(
+      Math.min(100, Math.max(1, Number(recipe.servings) || 2)),
+    );
     this.querySelector("#recipe_instructions").value = recipe.instructions || "";
     this.querySelector("#recipe_source_url").value = recipe.source_url || "";
-    this.querySelector("#recipe_source_name").value = recipe.source || "TheMealDB";
+    this.querySelector("#recipe_source_name").value =
+      recipe.source || "Wikibooks Kochbuch";
     if (String(recipe.category || "").toLocaleLowerCase() === "breakfast") {
       this.querySelector("#meal_type").value = "breakfast";
     }
@@ -404,7 +410,7 @@ class WeeklyMealPlannerCard extends HTMLElement {
       }
     }
     this.querySelector("#recipe_search_status").textContent =
-      "Zutaten und Mengen kontrollieren. Für jede Zutat BLS-Nährwerttreffer auswählen.";
+      "Deutsches Rezept übernommen. Mengen prüfen und für jede Zutat BLS-Nährwerttreffer auswählen.";
     this.querySelector("#recipe_search_results").replaceChildren();
   }
 
@@ -772,14 +778,14 @@ class WeeklyMealPlannerCard extends HTMLElement {
             <div class="meal-form">
             <h3>Neues Gericht</h3>
               <div class="recipe-search">
-                <strong>Gericht aus TheMealDB suchen</strong>
+                <strong>Deutsche Rezepte im Wikibooks-Kochbuch suchen</strong>
                 <div class="recipe-search-controls">
                   <input id="recipe_search_query" placeholder="z. B. Chicken Handi" maxlength="100" aria-label="Gericht suchen">
                   <button id="search_recipe" type="button">Suchen</button>
                 </div>
                 <p id="recipe_search_status" role="status" aria-live="polite"></p>
                 <div id="recipe_search_results" class="recipe-search-results"></div>
-                <small>Rezepte aus TheMealDB. Mengen vor dem Speichern prüfen; Nährwerte pro Zutat zuordnen.</small>
+                <small>Deutsche Rezepte aus Wikibooks. Lizenzhinweise auf der Originalseite beachten; Quelle wird gespeichert. Mengen prüfen und Nährwerte zuordnen.</small>
               </div>
               <input id="meal_name" placeholder="Gerichtname" maxlength="100" required>
               <label for="servings">Portionen pro Rezept</label>
@@ -1105,12 +1111,17 @@ class WeeklyMealPlannerCard extends HTMLElement {
 
 function parseRecipeMeasure(measure) {
   const match = String(measure).trim().match(
-    /^(\d+(?:[.,]\d+)?)\s*(kg|g|mg|ml|l)\b/i,
+    /^(\d+(?:[.,]\d+)?|\d+\s*\/\s*\d+)\s*(kg|g|gr\.?|mg|ml|l)(?=$|[\s,;])/i,
   );
   if (!match) return undefined;
-  const amount = Number(match[1].replace(",", "."));
+  const amountText = match[1].replace(",", ".");
+  const amount = amountText.includes("/")
+    ? amountText.split("/").map(Number).reduce((numerator, denominator) =>
+      denominator ? numerator / denominator : Number.NaN)
+    : Number(amountText);
   if (!Number.isFinite(amount) || amount <= 0) return undefined;
-  return { amount, unit: match[2].toLocaleLowerCase() };
+  const unit = match[2].replace(/\.$/, "").toLocaleLowerCase();
+  return { amount, unit: unit === "gr" ? "g" : unit };
 }
 
 function mondayOf(day) {

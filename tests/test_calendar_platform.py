@@ -347,18 +347,16 @@ async def test_recipe_search_returns_importable_results(hass, monkeypatch) -> No
     import custom_components.weekly_meal_planner as integration_module
 
     async def mock_search_recipes(session, query):
-        assert query == "chicken"
+        assert query == "Kartoffelsuppe"
         return [
             {
-                "id": "52795",
-                "name": "Chicken Handi",
-                "category": "Chicken",
-                "area": "Indian",
-                "instructions": "Cook chicken.",
-                "source_url": "https://example.org/recipe",
-                "image_url": "",
-                "ingredients": [{"name": "Chicken", "measure": "1.2 kg"}],
-                "source": "TheMealDB",
+                "id": "Kochbuch/ Kartoffelsuppe",
+                "name": "Kartoffelsuppe",
+                "servings": 4,
+                "instructions": "Kartoffeln garen.",
+                "source_url": "https://de.wikibooks.org/wiki/Kochbuch/_Kartoffelsuppe",
+                "ingredients": [{"name": "Kartoffeln", "measure": "500 g"}],
+                "source": "Wikibooks Kochbuch",
             }
         ]
 
@@ -371,13 +369,13 @@ async def test_recipe_search_returns_importable_results(hass, monkeypatch) -> No
     response = await hass.services.async_call(
         DOMAIN,
         "search_recipe",
-        {"query": "chicken"},
+        {"query": "Kartoffelsuppe"},
         blocking=True,
         return_response=True,
     )
 
-    assert response["results"][0]["name"] == "Chicken Handi"
-    assert response["results"][0]["ingredients"][0]["measure"] == "1.2 kg"
+    assert response["results"][0]["name"] == "Kartoffelsuppe"
+    assert response["results"][0]["ingredients"][0]["measure"] == "500 g"
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
 
@@ -415,7 +413,7 @@ async def test_add_meal_saves_bls_nutrition_and_recipe_details(hass) -> None:
             },
             "instructions": "Mit Milch aufkochen.",
             "source_url": "https://example.org/haferbrei",
-            "source_name": "TheMealDB",
+            "source_name": "Wikibooks Kochbuch",
         },
         blocking=True,
     )
@@ -432,7 +430,7 @@ async def test_add_meal_saves_bls_nutrition_and_recipe_details(hass) -> None:
         return_response=True,
     )
     assert details["instructions"] == "Mit Milch aufkochen."
-    assert details["source_name"] == "TheMealDB"
+    assert details["source_name"] == "Wikibooks Kochbuch"
     assert details["source_url"] == "https://example.org/haferbrei"
 
     assert await hass.config_entries.async_unload(entry.entry_id)

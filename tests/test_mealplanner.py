@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import sqlite3
 import io
 import sys
@@ -30,7 +31,10 @@ from weekly_meal_planner_test_package.mealplanner import (
     generate_shopping_list,
     generate_week_plan,
 )
-from weekly_meal_planner_test_package.recipe_api import parse_recipe_response
+from weekly_meal_planner_test_package.recipe_api import (
+    parse_wikibooks_recipe,
+    search_recipes,
+)
 
 
 def _minimal_bls_archive() -> bytes:
@@ -142,14 +146,16 @@ class MealPlannerDatabaseTests(unittest.TestCase):
             {"Linsen": {"amount": 300, "unit": "g"}},
             "Linsen garen.",
             "https://example.org/linsencurry",
-            "TheMealDB",
+            "Wikibooks Kochbuch",
         )
 
         meal = self.database.get_meal("Linsencurry")
 
         self.assertEqual(meal["instructions"], "Linsen garen.")
         self.assertEqual(meal["source_url"], "https://example.org/linsencurry")
-        self.assertEqual(meal["source_name"], "TheMealDB")
+        self.assertEqual(
+            meal["source_name"], "Wikibooks Kochbuch"
+        )
 
     def test_deleting_recipe_removes_it_from_saved_plans(self) -> None:
         self.database.add_meal(
@@ -337,35 +343,115 @@ class MealPlannerDatabaseTests(unittest.TestCase):
         self.assertEqual([food["bls_code"] for food in result], ["C131001", "C131000"])
         self.assertEqual(result[1]["nutrition"]["calories"], 348)
 
-    def test_recipe_response_includes_instructions_and_measured_ingredients(self) -> None:
-        recipes = parse_recipe_response(
-            {
-                "meals": [
-                    {
-                        "idMeal": "52795",
-                        "strMeal": "Chicken Handi",
-                        "strCategory": "Chicken",
-                        "strArea": "Indian",
-                        "strInstructions": "Heat oil.\r\nAdd chicken.",
-                        "strSource": "https://example.org/recipe",
-                        "strIngredient1": "Chicken",
-                        "strMeasure1": "1.2 kg",
-                        "strIngredient2": "Salt",
-                        "strMeasure2": "To taste",
-                    }
-                ]
-            }
+    def test_german_wikibooks_recipe_parser_extracts_recipe_content(self) -> None:
+        recipe = parse_wikibooks_recipe(
+            "Kochbuch/ Schokokuchen",
+            """== Zutaten für 4 Personen ==
+* 150 gr. dunkle Schokolade
+* 2 EL Butter
+* Vanille-Extrakt
+== Aufwand ==
+Backzeit 30 Minuten
+== Zubereitung ==
+Schokolade schmelzen.
+Teig verrühren und backen.""",
         )
 
-        self.assertEqual(recipes[0]["name"], "Chicken Handi")
-        self.assertEqual(recipes[0]["instructions"], "Heat oil.\nAdd chicken.")
+        self.assertEqual(recipe["name"], "Schokokuchen")
+        self.assertEqual(recipe["servings"], 4)
         self.assertEqual(
-            recipes[0]["ingredients"],
+            recipe["ingredients"],
             [
-                {"name": "Chicken", "measure": "1.2 kg"},
-                {"name": "Salt", "measure": "To taste"},
+                {"name": "dunkle Schokolade", "measure": "150 gr."},
+                {"name": "Butter", "measure": "2 EL"},
+                {"name": "Vanille-Extrakt", "measure": ""},
             ],
         )
+        self.assertEqual(
+            recipe["instructions"], "Schokolade schmelzen.\nTeig verrühren und backen."
+        )
+        self.assertEqual(
+            recipe["source"], "Wikibooks Kochbuch"
+        )
+        self.assertIn("de.wikibooks.org/wiki/Kochbuch/_Schokokuchen", recipe["source_url"])
+
+    def test_german_recipe_search_fetches_and_parses_wikibooks_pages(self) -> None:
+        class Response:
+            def __init__(self, payload: dict) -> None:
+                self.payload = payload
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args) -> None:
+                return None
+
+            def raise_for_status(self) -> None:
+                return None
+
+            async def json(self) -> dict:
+                return self.payload
+
+        class Session:
+            def __init__(self) -> None:
+                self.params = []
+
+            def get(self, url: str, *, params: dict, timeout):
+                self.params.append(params)
+                if params.get("list") == "search":
+                    return Response(
+                        {
+                            "query": {
+                                "search": [
+                                    {
+                                        "pageid": 342,
+                                        "title": (
+                                            "Kochbuch/ Passierte Kartoffelsuppe "
+                                            "mit Lachsstreifen"
+                                        ),
+                                        "wordcount": 185,
+                                    }
+                                ]
+                            }
+                        }
+                    )
+                return Response(
+                    {
+                        "query": {
+                            "pages": {
+                                "342": {
+                                    "revisions": [
+                                        {
+                                            "slots": {
+                                                "main": {
+                                                    "*": """== Zutaten ==
+* 800 g Kartoffeln
+== Zubereitung ==
+Kartoffeln kochen."""
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                )
+
+        session = Session()
+        recipes = asyncio.run(search_recipes(session, "Kartoffelsuppe"))
+
+        self.assertEqual(len(session.params), 2)
+        self.assertEqual(
+            session.params[0]["srsearch"],
+            'intitle:Kochbuch/ intitle:"Kartoffelsuppe"',
+        )
+        self.assertEqual(recipes[0]["name"], "Passierte Kartoffelsuppe mit Lachsstreifen")
+        self.assertEqual(
+            recipes[0]["ingredients"],
+            [{"name": "Kartoffeln", "measure": "800 g"}],
+        )
+        self.assertEqual(recipes[0]["instructions"], "Kartoffeln kochen.")
 
 
 class MealPlannerLogicTests(unittest.TestCase):

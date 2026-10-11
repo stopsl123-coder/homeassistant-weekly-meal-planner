@@ -25,7 +25,7 @@ add_meal:
       example: "https://example.org/recipe"
     source_name:
       description: Name der Rezeptquelle
-      example: "TheMealDB"
+      example: "Wikibooks Kochbuch"
 
 delete_meal:
   description: Löscht ein gespeichertes Gericht und entfernt es aus allen Wochenplänen.
@@ -58,11 +58,11 @@ search_ingredient:
       example: true
 
 search_recipe:
-  description: Sucht Gerichte nach Name in TheMealDB; Ergebnisse können importiert werden.
+  description: Sucht deutsche Rezepte im Wikibooks-Kochbuch; Ergebnisse können importiert werden.
   fields:
     query:
-      description: Gerichtname für die TheMealDB-Suche
-      example: "chicken"
+      description: Gerichtname für die Suche im deutschen Kochbuch
+      example: "Kartoffelsuppe"
 
 get_meal_details:
   description: Gibt Zubereitung und Herkunft eines gespeicherten Gerichts zurück.

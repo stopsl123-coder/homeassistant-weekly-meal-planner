@@ -17,10 +17,10 @@ und Feiertagen im Dashboard anzeigst.
 6. Öffne nach dem Einrichten die Integration und wähle **Optionen**, um
    API-Schlüssel und Planungseinstellungen anzupassen.
 
-Für die erste BLS-Suche und TheMealDB-Rezeptsuche braucht Home Assistant
-Internetzugang. BLS wird beim ersten Suchaufruf als offizielles Datenarchiv
-geladen und danach lokal durchsucht. USDA-Suche braucht zusätzlich einen
-API-Schlüssel.
+Für die erste BLS-Suche und die Rezeptsuche im deutschsprachigen
+Wikibooks-Kochbuch braucht Home Assistant Internetzugang. BLS wird beim ersten
+Suchaufruf als offizielles Datenarchiv geladen und danach lokal durchsucht.
+USDA-Suche braucht zusätzlich einen API-Schlüssel.
 
 ## 2. Rezeptkarte zum Dashboard hinzufügen
 
@@ -45,9 +45,9 @@ Essensplan auch ohne Rezeptkarte an.
    folgendem YAML hinzu:
 
    ```yaml
-   type: custom:weekly-meal-planner-card
-   grid_options:
-     columns: full
+    type: custom:weekly-meal-planner-card
+    grid_options:
+      columns: full
    ```
 
 6. Speichere Dashboard. Wenn Karte nach dem Neuladen nicht erscheint, lade
@@ -124,12 +124,15 @@ trotzdem anzeigen.
 
 ## 5. Weitere Rezepte und Änderungen
 
-Über **Gericht aus TheMealDB suchen** kannst du ein Rezept finden und dessen
-Zutaten, Mengen und Zubereitung übernehmen. Prüfe importierte Mengen immer:
-Angaben wie „to taste“, Tassen oder Esslöffel werden nicht automatisch in Gramm
-umgerechnet. Suche für jede Zutat einen BLS- oder USDA-Treffer und bestätige
-damit die Nährwertzuordnung. Herkunft und Zubereitung bleiben am Rezept
-gespeichert; TheMealDB-Quelle erscheint in der Gerichtauswahl.
+Über **Deutsche Rezepte im Wikibooks-Kochbuch suchen** kannst du ein Rezept
+finden und dessen Zutaten, Mengen und Zubereitung übernehmen. Wikibooks ist
+ein deutschsprachiges, frei lizenziertes Online-Kochbuch; Einträge sind nicht
+einheitlich formatiert. Prüfe importierte Mengen und Zutaten immer. Nicht
+erkannte Einheiten wie Esslöffel musst du vor dem Speichern manuell eintragen.
+Suche für jede Zutat einen BLS- oder USDA-Treffer und bestätige damit die
+Nährwertzuordnung. Quelle und Zubereitung bleiben am Rezept gespeichert.
+Wikibooks-Inhalte sind frei lizenziert; prüfe die Lizenzhinweise des jeweiligen
+Originaleintrags. Die gespeicherte Quelle verlinkt dorthin.
 
 Lege jedes Rezept einzeln mit der Rezeptkarte an. Wenn du ein gespeichertes
 Rezept mit demselben Namen erneut speicherst, wird es aktualisiert, nicht als
@@ -254,7 +257,8 @@ Weitere Aktionen findest du ebenfalls unter **Entwicklerwerkzeuge > Aktionen**:
   source: bls
   force_refresh: false
   ```
-- `weekly_meal_planner.search_recipe`: TheMealDB-Rezepte nach Name suchen.
+- `weekly_meal_planner.search_recipe`: Deutsche Rezepte im Wikibooks-Kochbuch
+  nach Name suchen.
 - `weekly_meal_planner.get_meal_details`: Zubereitung und Herkunft eines
   gespeicherten Rezepts abrufen.
 
@@ -282,8 +286,8 @@ und anschließend als Entitäts- oder Markdown-Karte ins Dashboard legen.
   Nach erfolgreichem Import funktioniert Suche lokal. USDA braucht API-Schlüssel.
 - **BLS-Treffer erscheint nicht:** Suche mit deutschem oder englischem Namen;
   einzelne Lebensmittel können im BLS anders benannt sein.
-- **TheMealDB-Suche schlägt fehl:** Prüfe Home-Assistant-Internetverbindung.
-  Ergebnisse können englische Namen oder unvollständige Mengen enthalten.
+- **Wikibooks-Rezeptsuche schlägt fehl:** Prüfe Home-Assistant-Internetverbindung.
+  Einträge können fehlende oder uneinheitlich formatierte Mengen haben.
 - **Kalender ist leer:** Kontrolliere Entity `calendar.weekly_meal_planner`
   und erstelle Wochenplan mit **Woche automatisch planen**.
 - **Kalorien oder Makros fehlen:** Prüfe Attribut `missing_nutrition` am

@@ -411,7 +411,7 @@ def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as err:
             _LOGGER.warning("Rezeptsuche fehlgeschlagen: %s", err)
             raise HomeAssistantError(
-                "TheMealDB-Suche fehlgeschlagen. Internetverbindung prüfen."
+                "Wikibooks-Rezeptsuche fehlgeschlagen. Internetverbindung prüfen."
             ) from err
         return {"query": query, "results": results}
 
