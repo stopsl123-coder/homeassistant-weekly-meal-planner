@@ -322,7 +322,7 @@ async def test_bls_search_uses_local_database(hass) -> None:
     with database._connect() as connection:
         connection.execute(
             """
-            INSERT INTO bls_foods
+            INSERT OR REPLACE INTO bls_foods
                 (code, name, name_en, calories, protein, fat, carbs)
             VALUES ('C131000', 'Haferflocken', 'Oat flakes', 348, 13.22, 6.65, 58.7)
             """
@@ -393,7 +393,7 @@ async def test_add_meal_saves_bls_nutrition_and_recipe_details(hass) -> None:
     with database._connect() as connection:
         connection.execute(
             """
-            INSERT INTO bls_foods
+            INSERT OR REPLACE INTO bls_foods
                 (code, name, name_en, calories, protein, fat, carbs)
             VALUES ('C131000', 'Haferflocken', 'Oat flakes', 348, 13.22, 6.65, 58.7)
             """
